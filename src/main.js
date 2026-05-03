@@ -446,22 +446,33 @@ async function spawnAgent(code, model, cwd, opts = {}) {
 // the agent already loaded their full kickoff at spawn. Spawn-time kickoff
 // content can be wired later by reading SaaS Architect/<AGENT>-kickoff.md
 // (deferred — not strictly needed for Phase 2 smoke).
-function buildWakeupPrompt({ ticketHumanId, reason }) {
+function buildWakeupPrompt({ ticketHumanId, reason, isBug }) {
   const ref = ticketHumanId ? ` (${ticketHumanId})` : '';
-  return `\n\n[Yunomia wakeup — ${reason}${ref}] Check your queue.\n`;
+  const base = `\n\n[Yunomia wakeup — ${reason}${ref}] Check your queue.`;
+  if (!isBug) return base + '\n';
+  // Bug-specific enrichment — soul-level directive, restated at wake time.
+  return base + `\n\nBUG PROTOCOL — MANDATORY before fix code:\n  1. Open lessons.json for this project. Search for parallels by symptom, files, tags.\n  2. Post an in_progress comment that includes ONE of:\n       Lesson cited: BL-NNN — <how it applies>\n       No matching lessons in N reviewed\n  3. /handoff and /done are blocked by Yunomia's compliance engine until that line exists.\n  4. After fix, write a NEW Bug Lesson via the pending-lessons sentinel (see your kickoff).\n`;
 }
 
 async function onWakeup(payload) {
   const { agentCode, ticketHumanId, reason } = payload;
-  // Wakeup goes to the agent running in the CURRENT project (not arbitrary instance).
   const key = ptyKey(state.selectedProject, agentCode);
   if (!state.ptys.has(key)) return;
+  // Look up ticket type to enrich prompt for bugs.
+  let isBug = false;
+  if (ticketHumanId) {
+    try {
+      const tickets = await invoke('tickets_list', { args: { cwd: state.selectedProject } }) || [];
+      const t = tickets.find((x) => x.human_id === ticketHumanId);
+      if (t && t.type === 'bug') isBug = true;
+    } catch { /* ignore */ }
+  }
   try {
-    await invoke('pty_write', { args: { id: key, data: buildWakeupPrompt(payload) } });
+    await invoke('pty_write', { args: { id: key, data: buildWakeupPrompt({ ...payload, isBug }) } });
     noteWakeupSent(agentCode, ticketHumanId, reason);
     const ent = state.ptys.get(key);
     if (ent) ent.lastWriteAt = Date.now();
-    console.info(`[wakeup] ${key} ← ${reason}`);
+    console.info(`[wakeup] ${key} ← ${reason}${isBug ? ' (BUG)' : ''}`);
   } catch (err) {
     console.warn(`[wakeup] write failed for ${key}`, err);
   }
@@ -701,6 +712,30 @@ async function scheduleTick() {
 }
 setInterval(scheduleTick, 30_000);
 setTimeout(scheduleTick, 3000);
+
+// Pending-lessons poller — agents drop JSON into pending-lessons/, Yunomia
+// ingests them via lessons_create + deletes the file. 10 s tick.
+async function pendingLessonsTick() {
+  const cwd = state.selectedProject;
+  if (!cwd) return;
+  try {
+    const ingested = await invoke('pending_lessons_scan', { args: { cwd } }) || [];
+    if (ingested.length) {
+      for (const l of ingested) {
+        await invoke('inbox_append', { args: {
+          cwd, kind: 'bug.lesson',
+          ticketHumanId: l.ticket_human_id || null,
+          summary: `${l.human_id}: ${l.symptom}`.slice(0, 200),
+        }}).catch(() => {});
+      }
+      refreshInboxBadge();
+      // If user is on the Lessons sub-tab, re-render.
+      if (typeof window.__renderLessons === 'function') window.__renderLessons();
+    }
+  } catch { /* ignore */ }
+}
+setInterval(pendingLessonsTick, 10_000);
+setTimeout(pendingLessonsTick, 4000);
 
 // Brief auto-refresh poll — preserves form inputs by only updating the
 // brief <pre> content, not re-running the whole render.

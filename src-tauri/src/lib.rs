@@ -65,6 +65,7 @@ pub fn run() {
             tickets::agent_proposal_read,
             tickets::agent_proposal_clear,
             tickets::agent_proposal_approve,
+            tickets::pending_lessons_scan,
         ])
         .setup(|app| {
             let _window = app.get_webview_window("main").expect("main window missing");

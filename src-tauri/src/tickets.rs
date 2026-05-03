@@ -356,6 +356,63 @@ pub fn brief_write(args: BriefWriteArgs) -> Result<(), String> {
     fs::write(&path, args.markdown).map_err(|e| e.to_string())
 }
 
+// Pending-lessons sentinel ingestion. Agents write per-bug-close lessons as
+// JSON files into ~/.yunomia/projects/<>/pending-lessons/. Yunomia polls
+// the dir, runs them through lessons_create, then deletes the file.
+#[derive(Deserialize, Clone, Debug)]
+pub struct PendingLessonInput {
+    pub symptom: String,
+    pub severity: Option<String>,
+    pub ticket_id: Option<String>,
+    pub ticket_human_id: Option<String>,
+    pub root_cause: Option<String>,
+    pub fix: Option<String>,
+    pub files_changed: Option<String>,
+    pub recognise_pattern: Option<String>,
+    pub prevent_action: Option<String>,
+    pub tags: Option<Vec<String>>,
+    pub created_by: Option<String>,
+}
+#[derive(Deserialize)]
+pub struct PendingLessonsScanArgs { pub cwd: String }
+#[tauri::command]
+pub fn pending_lessons_scan(args: PendingLessonsScanArgs) -> Result<Vec<Lesson>, String> {
+    let dir = ensure_project_dir(&args.cwd)?;
+    let pending_dir = dir.join("pending-lessons");
+    if !pending_dir.exists() { return Ok(Vec::new()); }
+    let mut ingested = Vec::new();
+    for entry in fs::read_dir(&pending_dir).map_err(|e| e.to_string())?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+        let raw = match fs::read_to_string(&path) { Ok(r) => r, Err(_) => continue };
+        let input: PendingLessonInput = match serde_json::from_str(&raw) {
+            Ok(i) => i,
+            Err(e) => { log::warn!("pending-lesson parse {}: {}", path.display(), e); continue }
+        };
+        if input.symptom.trim().is_empty() {
+            log::warn!("pending-lesson missing symptom: {}", path.display()); continue;
+        }
+        match lessons_create(LessonCreateArgs {
+            cwd: args.cwd.clone(),
+            symptom: input.symptom,
+            severity: input.severity,
+            ticket_id: input.ticket_id,
+            ticket_human_id: input.ticket_human_id,
+            root_cause: input.root_cause,
+            fix: input.fix,
+            files_changed: input.files_changed,
+            recognise_pattern: input.recognise_pattern,
+            prevent_action: input.prevent_action,
+            tags: input.tags,
+            created_by: input.created_by.or_else(|| Some("agent".into())),
+        }) {
+            Ok(l) => { ingested.push(l); let _ = fs::remove_file(&path); }
+            Err(e) => log::warn!("pending-lesson ingest failed: {}", e),
+        }
+    }
+    Ok(ingested)
+}
+
 // Agent proposals — Lead writes a JSON file to ask the user to spawn a new
 // agent mid-project. Yunomia polls the file, surfaces a modal, ingests on
 // approve. Single proposal at a time (Lead overwrites).
@@ -432,13 +489,13 @@ fn default_text(opt: &Option<String>, fallback: &str) -> String {
     opt.as_deref().filter(|s| !s.trim().is_empty()).map(String::from).unwrap_or_else(|| fallback.into())
 }
 fn default_soul(code: &str, reason: &str) -> String {
-    format!("# {} — Soul\n\nRole proposed by Lead: {}\n\n## Voice\n- Direct, technical, terse.\n- Pushes back on fuzzy scope.\n- Cites evidence over opinion.\n\n## Expertise\n(populate during onboarding)\n\n## Operating principles\n- Single-task focus.\n- Document decisions in tickets, not chat.\n- File a bug lesson on every defect closure.\n", code, reason)
+    format!("# {} — Soul\n\nRole proposed by Lead: {}\n\n## Voice\n- Direct, technical, terse.\n- Pushes back on fuzzy scope.\n- Cites evidence over opinion.\n\n## Expertise\n(populate during onboarding)\n\n## Bug protocol — MANDATORY\nBefore writing a single line of code on any `type=bug` ticket:\n\n1. Read `~/.yunomia/projects/<this-project>/lessons.json`.\n2. Search for parallels by symptom, files, tags.\n3. In your in_progress comment, add ONE of these verbatim:\n     - `Lesson cited: BL-NNN — <one-line summary of how it applies>`\n     - `Lessons cited: BL-NNN, BL-MMM — <how they apply>`\n     - `No matching lessons in N reviewed`\n   (Yunomia's compliance engine blocks /handoff and /done until this line exists.)\n4. If a parallel exists, *use* it — start from the cited fix unless you can articulate why this is structurally different.\n5. After the bug is closed, write a new Bug Lesson via the sentinel-file flow (see kickoff).\n\n## Operating principles\n- Single-task focus.\n- Document decisions in tickets, not chat.\n- File a bug lesson on every defect closure.\n", code, reason)
 }
 fn default_kickoff(code: &str, reason: &str) -> String {
-    format!("You are {} — newly spawned by the project Lead.\n\nReason: {}\n\nFirst-wake actions:\n1. Read your soul, goals, and the project brief.\n2. Check your queue (assigned tickets in this project's kanban).\n3. If queue is empty, idle until something lands.\n\nUse Yunomia's kanban via the file-backed JSON store. Comments + transitions ripple through the dashboard automatically.\n", code, reason)
+    format!("You are {} — newly spawned by the project Lead.\n\nReason: {}\n\nFirst-wake actions:\n1. Read your soul, goals, and the project brief.\n2. Check your queue (assigned tickets in this project's kanban — `tickets.json`).\n3. If queue is empty, idle until something lands.\n\nFiling a Bug Lesson (after closing a `type=bug` ticket):\n- Write the lesson as JSON to `~/.yunomia/projects/<sanitised-cwd>/pending-lessons/<uuid>.json`.\n- Yunomia ingests within 10 s and removes the file.\n- Schema:\n   {{\n     \"symptom\": \"<one sentence>\",\n     \"severity\": \"low|medium|high|critical\",\n     \"ticket_id\": \"<uuid>\",\n     \"ticket_human_id\": \"<PRJ-NNN>\",\n     \"root_cause\": \"...\",\n     \"fix\": \"...\",\n     \"files_changed\": \"comma-separated paths\",\n     \"recognise_pattern\": \"how to spot this next time\",\n     \"prevent_action\": \"what to bake into testing/review to stop recurrence\",\n     \"tags\": [\"...\"],\n     \"created_by\": \"{}\"\n   }}\n\nBug protocol (also in your soul): always consult `lessons.json` BEFORE writing fix code. Cite the BL or state \"No matching lessons in N reviewed\" in your in_progress comment.\n", code, reason, code)
 }
 fn default_pre_compact(code: &str) -> String {
-    format!("/pre-compact for {}.\n\nSummarise:\n- Tickets touched this session (human ids + verdict).\n- Open questions you didn't get to.\n- Files modified.\n- Lessons learnt (file them as BL-NNN before /compact).\n- State you'll need to resume cleanly.\n\nWrite a 200–500 word summary. Then trigger /compact.\n", code)
+    format!("/pre-compact for {}.\n\nSummarise (200–500 words):\n- Tickets touched this session (human ids + verdict).\n- Open questions you didn't get to.\n- Files modified.\n- Lessons learnt (file them via the pending-lessons sentinel BEFORE /compact — see your kickoff).\n- State you'll need to resume cleanly post-compact.\n\nThen trigger /compact.\n", code)
 }
 fn default_reawaken(code: &str) -> String {
     format!("Reawaken — {}\n\nYou were /compact'd. Read your soul + goals + the most recent BL filed under this project. Then check your queue. If you find a stale in_progress ticket assigned to you, resume it.\n", code)
@@ -732,15 +789,34 @@ pub fn eligible_actions(args: EligibleArgs) -> Result<EligibleActions, String> {
             }
         }
     }
-    // Bug close requires a Bug Lesson cited.
-    if t.r#type == "bug" && t.status == "in_review" {
+    // Bug protocol: must have consulted lessons archive before working on the
+    // bug. Verdict comment must contain either a `Lesson cited:` line or
+    // `No matching lessons in N reviewed`. This forces the agent to surface
+    // the lesson lookup before any /done.
+    if t.r#type == "bug" && (t.status == "in_progress" || t.status == "in_review") {
+        let consulted = comments.iter().any(|c|
+            c.ticket_id == t.id && (
+                c.body_md.contains("Lesson cited:") ||
+                c.body_md.contains("Lessons cited:") ||
+                c.body_md.contains("No matching lessons")
+            )
+        );
+        if !consulted {
+            e.can_handoff = false;
+            e.handoff_reason = Some("Bug ticket: agent must consult lessons.json and post `Lesson cited: BL-NNN` or `No matching lessons in N reviewed` before handoff.".into());
+            e.can_done = false;
+            e.done_reason = Some("Bug ticket: lesson consultation evidence missing.".into());
+        }
+    }
+    // Bug close requires a new Bug Lesson cited (post-fix capture).
+    if t.r#type == "bug" && t.status == "in_review" && e.can_done {
         let cited = lessons.iter().any(|l| l.ticket_id.as_deref() == Some(t.id.as_str()));
         if !cited {
             e.can_done = false;
-            e.done_reason = Some("Bug ticket can't /done without a Bug Lesson — capture one first.".into());
+            e.done_reason = Some("Bug ticket can't /done without a Bug Lesson capturing this fix.".into());
         }
     }
-    // Pretend-QA gate: bugs need a verdict comment matching ## QA — PASS.
+    // QA gate: bugs need a verdict comment matching ## QA — PASS.
     if t.r#type == "bug" && t.status == "in_review" && e.can_done {
         let qa_passed = comments.iter().any(|c| c.ticket_id == t.id && c.body_md.contains("## QA — ") && c.body_md.contains("PASS"));
         if !qa_passed {
