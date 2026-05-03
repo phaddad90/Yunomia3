@@ -159,29 +159,65 @@ Plus globally:
 
 ---
 
+## Token-use philosophy
+
+Every design decision in Yunomia is filtered through one question: does this waste tokens? Multi-agent orchestration burns API spend fast if you let it. The patterns below are the ones that survived contact with real workloads.
+
+### Lessons over rediscovery
+
+Agents must consult `lessons.json` before touching a bug ticket. The compliance engine refuses to let `/handoff` or `/done` pass on a bug until the agent has cited a parallel lesson or stated none was found. A bug fixed once is a fix template for every future near-match: cheap pattern lookup beats expensive re-derivation, and the savings compound as the archive grows. Agents file their own lessons via a sentinel-file flow on bug closure, so the archive grows without operator effort.
+
+### Wakeups are events, not polls
+
+The naive way to keep a fleet alive is to ping every agent on a cron. That bills you for a full LLM turn just to confirm the agent has nothing to do. Yunomia inverts it: every agent has a `wakeup_mode`. Workers default to `on-assignment`, meaning their pty stays idle (zero tokens) until the kanban routes a ticket to them, at which point a minimal wakeup prompt fires over pty stdin. Only orchestrators (Lead, CEO) opt into `heartbeat` mode for periodic fleet sweeps, and even those run on long intervals (default 60 minutes) and produce one short check per tick.
+
+### Programmatic wakeup, not session restart
+
+When a wakeup does fire, it's a stdin write to an existing pty, not a fresh `claude` invocation. The session keeps its system prompt, kickoff, soul, and prior context. A wakeup costs roughly the same as a normal user message. Restarting a session would cost the full kickoff plus rebuilding any in-memory context.
+
+### Compact early, compact when idle
+
+Sessions degrade past about 50% context utilisation: late-context summaries are lossier than early ones, so a session compacted at 80% generates a worse summary than one compacted at 50%. Yunomia's auto-compact orchestrator fires `/pre-compact` then `/compact` when an agent crosses 50% AND is idle. Idle gating prevents mid-thought interruption; the 50% ceiling keeps summary quality high. Each agent also has a per-role `pre-compact.md` template that tells it what to summarise, so the post-compact session reorients in tens of tokens instead of hundreds.
+
+### Per-agent model selection
+
+Not every task needs Opus. The fleet picks per role: Haiku for verification-heavy work like QA, Sonnet for general engineering, Opus reserved for design and scoping (typically Lead and CEO). Configurable per agent in the project's roster, and Lead's proposed-agents JSON can recommend models per role on first onboarding.
+
+### Single-task focus
+
+The compliance engine prevents an agent from `/start`ing a second ticket while another is already in progress. The motivation is partly discipline, but it's also a cost lever: an agent juggling tickets pays context-switching tax (re-loading state, re-stating decisions) on every flip. One ticket at a time keeps each session's context narrow and short.
+
+### File-backed canonical state
+
+Every piece of long-lived state (brief, agents, tickets, comments, audit, lessons, schedules, soul, kickoff, pre-compact, reawaken) lives as plain JSON or markdown on disk. Agents read canonical files via `Read` rather than asking the operator to reconstruct context in chat. The cheapest token is the one you didn't generate.
+
+### Onboarding compresses the operator's biggest cost
+
+Most multi-agent setups bleed tokens during scoping, when the operator types lengthy briefs into multiple agents one at a time. Yunomia's onboarding has a single Lead agent interview the operator once, write the brief, propose the fleet, and then distribute that scope to all subsequently-spawned agents via per-agent kickoff and soul files. The interview cost is paid once; the distribution is free.
+
+---
+
 ## Research and development history
 
-Yunomia is the third generation of an evolving experiment in turning a fleet of Claude Code sessions into something that behaves like a focused team rather than a pile of terminals. The arc:
+Yunomia is the third generation of an evolving experiment in turning a fleet of Claude Code sessions into something that behaves like a focused team rather than a pile of terminals.
 
-### v1: Project Yunomia (concept stage)
+### v1: single-agent shell with deployable subagents
 
-The first attempt was raw: shell scripts, file-backed kickoffs, manual paste-relay between an orchestrator and worker terminals. It proved the core idea (multiple Claude Code sessions playing distinct roles, coordinating through written verdicts and a shared task list) but the operating overhead was high. Every wakeup, every handoff, every lesson capture was Peter typing.
+A single Claude Code instance running in a browser CLI, given the ability to dispatch subagents for delimited tasks. Proved out the basic shape of orchestration plus delegation, exposed the cost of poor handoff hygiene, and made the case for an explicit task list and a written verdict format. Did not yet have a distinct fleet of named, role-specific agents.
 
-### v2: Mission Control (PrintPepper, 2026 Q1 to Q2)
+### v2: Mission Control
 
-Mission Control was the working version of v1: a single-tenant browser dashboard at `localhost:4600` riding on top of PrintPepper's admin API. It introduced the seven-column kanban, the agent rail with traffic-light status, the per-ticket comment thread, the Bug Lessons archive (BL-NNN), the CEO inbox, the schedule poller, the heartbeat ticker, the file-backed kickoff and soul documents, and the compliance engine (`single-task-focus`, `qa-pass-required`, `bug-needs-lesson`, `patch-snake-case-rejected`, kill-switch, lint warnings).
+A browser-based mission-control dashboard for a fleet of named role-specific agents. Introduced the seven-column kanban, the agent rail with traffic-light status, per-ticket comment threads, the Bug Lessons archive, the per-agent kickoff/soul/pre-compact files, the compliance engine (single-task focus, lesson-on-bug-close, QA verdict, kill-switch, lint warnings), the heartbeat ticker, and the schedule poller. The operating model worked but the dashboard was tightly bound to one project's admin API and a localhost server; it could not be packaged or distributed.
 
-Across roughly 130 tickets (PH-001 through PH-130-ish, on the `feature/printpepper-mission-control` branch), the system grew from a kanban viewer to a real orchestration surface. By the end of v2 the agents were filing their own lessons, the heartbeat was nudging stuck agents, and the compliance engine was rejecting bad ticket transitions. The drift point was that everything was tied to one company (PrintPepper), one admin API, one localhost server. It worked, but it could not move.
+### v3: Yunomia (this repo, in development)
 
-### v3: Yunomia (this repo)
+Lifts the v2 operating model out of any single-project assumptions and packages it as a portable desktop application. Tauri shell, ptys hosting real Claude Code sessions, embedded kanban with no external server, file-backed everything at `~/.yunomia/`, project-agnostic by design, signed binaries for macOS and Windows.
 
-v3 keeps the v2 operating model and packages it as a portable desktop application. Tauri shell, ptys hosting real Claude Code sessions, embedded kanban with no external server, file-backed everything at `~/.yunomia/`, project-agnostic by design, signed binaries for macOS and Windows.
+What survived from v2: the kanban shape, Bug Lessons schema and bug-close hook, per-agent kickoff/soul/pre-compact/reawaken pattern, agent-rail traffic lights, compliance engine philosophy, auto-compact-at-50%, and the heartbeat split into mechanical and judgement layers.
 
-The design decisions that survived from v2: file-backed kickoffs and souls (PH-090), the seven-column kanban (PH-051 through PH-097), Bug Lessons schema (PH-088 to PH-098), the per-agent traffic-light rail (PH-080, PH-094), Mission Control as a single window (PH-061 design doc), the auto-compact-at-50% rule (Peter's `feedback_compact_at_50pct.md`), and the compliance engine pattern (PH-123 convergence, PH-126 deploy).
+What's net-new in v3: project picker so one app hosts many fleets; the Lead-led onboarding flow (interview, brief, proposal, approval); mid-project agent proposals with auto-scaffolded soul/kickoff/pre-compact/reawaken templates; per-agent wakeup mode so workers stay dormant until ticketed (the biggest token saver); programmatic wakeup over pty stdin, no human paste; the bug-protocol gate forcing lessons-archive consultation before fix code; sentinel-file lesson ingestion so agents log their own lessons; xterm-based pane management with theme-aware terminals; and crash recovery via Claude Code's session resume.
 
-The new ideas in v3: project picker so one app hosts many fleets; onboarding via a Lead agent that interviews the user, writes the brief, proposes the team, and files initial tickets; agent-side mid-project proposals (Lead writes `agent-proposal.json`); per-agent wakeup mode (`heartbeat` versus `on-assignment`); per-agent kickoff, goals, soul, pre-compact, and reawaken markdown all editable in-app; programmatic wakeup over pty stdin (no human paste); the bug-protocol gate (agent must consult lessons before working a bug); sentinel-file lesson ingestion (agents log lessons, not the user); xterm-based pane management with light and dark theming; and crash recovery via Claude Code's session resume.
-
-The throughline: every layer of the operating model that worked in v2 is here, lifted out of PrintPepper-specific plumbing and packaged so any project can use it.
+v3 is still in active development. Compliance UI consumption, per-rule kill-switch UI, exact context-percent via Claude Code hooks, and a few governance polish items are on the near-term roadmap.
 
 ---
 
