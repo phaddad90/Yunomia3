@@ -1,4 +1,4 @@
-// Activity feed, Inbox, Reports, Agents config — read-only / lightweight views
+// Activity feed, Inbox, Reports, Agents config - read-only / lightweight views
 // rendered into the dashboard sub-tab containers.
 
 import { invoke } from '@tauri-apps/api/core';

@@ -38,7 +38,7 @@
     ],
     "category": "DeveloperTool",
     "shortDescription": "Multi-agent orchestration shell",
-    "longDescription": "Yunomia hosts a project's full agent fleet — kanban, ticket inbox, bug-lessons archive, and a real Claude Code session per agent — in one window, file-backed locally. Onboarding via a Lead agent that interviews you, writes the brief, and proposes the team.",
+    "longDescription": "Yunomia hosts a project's full agent fleet - kanban, ticket inbox, bug-lessons archive, and a real Claude Code session per agent - in one window, file-backed locally. Onboarding via a Lead agent that interviews you, writes the brief, and proposes the team.",
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": null,

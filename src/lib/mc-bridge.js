@@ -1,4 +1,4 @@
-// Yunomia — Mission Control bridge.
+// Yunomia - Mission Control bridge.
 //
 // Connects to the MC server WS (localhost:4600/ws) and dispatches events:
 //   • ticket.changed → if a running agent was just assigned a ticket, write a
@@ -12,7 +12,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-// PH-134 — read MC base from localStorage (set by main.js MC_BASE) so the WS
+// PH-134 - read MC base from localStorage (set by main.js MC_BASE) so the WS
 // URL inherits whatever the dashboard iframe is pointed at. NEVER hardcode 4600.
 function mcWsUrl() {
   const base = localStorage.getItem('mc.base') || '';
@@ -24,7 +24,7 @@ let ws = null;
 let reconnectTimer = null;
 let cfg = null;
 
-const VERDICT_RE = /^##\s+\S+\s+\w+\s+—\s+.+\s+—\s+\w+/m;
+const VERDICT_RE = /^##\s+\S+\s+\w+\s+-\s+.+\s+-\s+\w+/m;
 
 export function startMcBridge(opts = {}) {
   cfg = opts;
@@ -41,13 +41,13 @@ function connect() {
   if (!cfg) return;
   const url = mcWsUrl();
   if (!url) {
-    console.info('[mc-bridge] no MC URL configured — bridge inactive');
+    console.info('[mc-bridge] no MC URL configured - bridge inactive');
     return;
   }
   ws = new WebSocket(url);
   ws.addEventListener('open', () => console.info(`[mc-bridge] connected → ${url}`));
   ws.addEventListener('close', () => {
-    console.warn('[mc-bridge] disconnected — reconnect in 2s');
+    console.warn('[mc-bridge] disconnected - reconnect in 2s');
     if (cfg) reconnectTimer = setTimeout(connect, 2000);
   });
   ws.addEventListener('message', (e) => {
@@ -65,7 +65,7 @@ function handleMsg(msg) {
   }
 }
 
-// PH-134 Phase 2 — programmatic wakeup pipeline.
+// PH-134 Phase 2 - programmatic wakeup pipeline.
 // Wakeup fires when a ticket transitions into a state the agent should
 // act on: status flips to "assigned" with assignee=X, or status flips to
 // "in_progress" while assigneeAgent=X (the agent themselves moved it),
@@ -87,7 +87,7 @@ function handleTicketChanged(data) {
       });
     }
   }
-  // Task-boundary trigger #1 — ticket transition.
+  // Task-boundary trigger #1 - ticket transition.
   if (fields.has('status') && (after.status === 'in_review' || after.status === 'done')) {
     cfg?.onTaskBoundary?.({
       agentCode: assignee,
@@ -110,7 +110,7 @@ function handleTicketCreated(data) {
   }
 }
 
-// Task-boundary trigger #2 — verdict comment posted (regex match).
+// Task-boundary trigger #2 - verdict comment posted (regex match).
 function handleCommentAdded(data) {
   const c = data?.comment;
   if (!c) return;

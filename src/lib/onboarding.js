@@ -1,8 +1,8 @@
-// Yunomia — onboarding view.
+// Yunomia - onboarding view.
 //
 // New project = no tickets, no agents, no kanban. Just the lead-agent flow:
 // user chats with a Lead pty, Lead writes brief.md, when ready user clicks
-// "Approve brief — go active" and the dashboard flips to kanban mode.
+// "Approve brief - go active" and the dashboard flips to kanban mode.
 
 import { invoke } from '@tauri-apps/api/core';
 
@@ -19,7 +19,7 @@ onboarding interview. You will:
 1. Interview the user about the project.
    Ask, in order, with brief follow-ups:
    - One-liner: in one sentence, what is this project?
-   - Primary goals: what does "done" look like? Be concrete — list outcomes.
+   - Primary goals: what does "done" look like? Be concrete - list outcomes.
    - Stakeholders: who uses this? Who cares about it shipping?
    - Constraints: deadlines, must-use tech, hard non-negotiables.
    - Deploy targets: local-only, staging, production, internal-tool, public SaaS?
@@ -45,8 +45,8 @@ onboarding interview. You will:
 3. When you and the user agree the brief is solid, write TWO machine-readable
    proposal files (not just a markdown section):
 
-   FILE A — ${cwd}/.yunomia-proposals/proposed-agents.json (note: actually
-   written to ~/.yunomia/projects/<sanitised>/proposed-agents.json — Yunomia
+   FILE A - ${cwd}/.yunomia-proposals/proposed-agents.json (note: actually
+   written to ~/.yunomia/projects/<sanitised>/proposed-agents.json - Yunomia
    reads from there). Schema:
 
      [
@@ -58,7 +58,7 @@ onboarding interview. You will:
    wakeup_mode: "heartbeat" for orchestrators that should wake on a cron;
    "on-assignment" for workers that wake only when given a ticket.
 
-   FILE B — proposed-tickets.json. Schema:
+   FILE B - proposed-tickets.json. Schema:
 
      [
        { "title": "Schema migration for orders", "body_md": "…", "type": "migration", "audience": "admin", "assignee_agent": "SA" },
@@ -78,7 +78,7 @@ onboarding interview. You will:
 
    Don't create agents or tickets via any other method. Yunomia ingests
    these files when the user clicks Approve. You can rewrite either file
-   anytime — the user always sees the latest before approving.
+   anytime - the user always sees the latest before approving.
 
 4. Be a real lead, not a yes-bot:
    - Push back when scope is fuzzy.
@@ -114,7 +114,7 @@ export async function markLeadSpawned(cwd) {
 
 // Render the onboarding view into a container element.
 // `spawnAgent(code, model, cwd, opts)` is the spawn function from main.js.
-// `leadRunning` is the live pty status, NOT the stored flag — pty dies on app
+// `leadRunning` is the live pty status, NOT the stored flag - pty dies on app
 // restart, so we check the actual registry every render instead of trusting
 // state.lead_spawned_at (which was useful once but now misleads after a quit).
 export function renderOnboardingView({ container, cwd, state, brief, spawnAgent, onApproved, leadRunning = false }) {
@@ -132,7 +132,7 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
         <section class="onb-left">
           <h3>Lead agent</h3>
           ${leadRunning
-            ? `<p>Lead is running in the <b>LEAD</b> tab. Talk to them about your goals — they'll write the brief here as you go.</p>`
+            ? `<p>Lead is running in the <b>LEAD</b> tab. Talk to them about your goals - they'll write the brief here as you go.</p>`
             : `<p>The lead agent will interview you about goals, scope, and constraints, then write the brief and propose an initial agent fleet + ticket list.</p>
                <div class="onb-form">
                  <label>Project name</label>
@@ -150,10 +150,10 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
             <li><b>Interview.</b> Lead asks you about goals, scope, constraints, deploy targets.</li>
             <li><b>Brief written.</b> Lead writes <code>brief.md</code> incrementally as you talk.</li>
             <li><b>Proposals.</b> Lead suggests agent fleet + initial tickets in the brief.</li>
-            <li><b>Approve.</b> You click "Approve brief" — Yunomia switches to active mode and the kanban becomes available.</li>
+            <li><b>Approve.</b> You click "Approve brief" - Yunomia switches to active mode and the kanban becomes available.</li>
           </ol>
           <div class="onb-approve-row">
-            <button id="onb-approve" class="btn-primary" type="button" ${briefHasContent ? '' : 'disabled'}>Approve brief — go active</button>
+            <button id="onb-approve" class="btn-primary" type="button" ${briefHasContent ? '' : 'disabled'}>Approve brief - go active</button>
             ${briefHasContent ? '' : '<small>Available once the brief has real content (>50 chars).</small>'}
           </div>
         </aside>

@@ -1,4 +1,4 @@
-// Yunomia — auto-compact orchestrator.
+// Yunomia - auto-compact orchestrator.
 //
 // Two trigger paths per the locked spec:
 //   • Hard ceiling at 50%: must compact regardless of task state.
@@ -109,7 +109,7 @@ export async function firePreCompact(agentCode) {
   // 5-min fallback per spec. If the agent crashed before writing the sentinel,
   // we time out and reset so manual pre-compact can be retried.
   ent.pendingTimer = setTimeout(() => {
-    console.warn(`[compact] sentinel timeout for ${agentCode} — falling back to manual`);
+    console.warn(`[compact] sentinel timeout for ${agentCode} - falling back to manual`);
     ent.pendingPreCompact = false;
   }, PENDING_TIMEOUT_MS);
 }

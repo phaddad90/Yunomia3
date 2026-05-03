@@ -1,4 +1,4 @@
-// Yunomia — per-agent heartbeat config.
+// Yunomia - per-agent heartbeat config.
 //
 // Each agent in the project's roster has wakeup_mode = "heartbeat" or
 // "on-assignment". Heartbeat agents fire a scheduled wake every
@@ -7,12 +7,12 @@
 //
 // Layer 0 mechanical safety-net (zero-LLM) still runs alongside.
 //
-// Layer 0 — mechanical safety-net (zero LLM tokens). Every 30s, walks each
+// Layer 0 - mechanical safety-net (zero LLM tokens). Every 30s, walks each
 // running pty: if we wrote a wakeup AT_T and the pty produced no stdout in
 // the 5 minutes following, re-fire the wakeup prompt. Catches fired-but-
 // missed wakeups, crashed-restart races, and pty layer hiccups.
 //
-// Layer 1 — CEO judgement-required hourly check. Writes a brief heartbeat
+// Layer 1 - CEO judgement-required hourly check. Writes a brief heartbeat
 // prompt to the CEO pty if running, asking it to scan for stuck agents and
 // reassign / nudge as needed. ~200-500 tokens/tick on Sonnet/Opus.
 
@@ -61,14 +61,14 @@ function layer0Tick({ getRunningAgents, rewakeAgent }) {
     if (!w.lastWakeupAt) continue;
     if (w.lastStdoutAt && w.lastStdoutAt >= w.lastWakeupAt) continue;  // already responded
     if (now - w.lastWakeupAt < LAYER0_STALL_MS) continue;               // still in grace
-    console.warn(`[heartbeat-L0] ${code} stalled — re-firing wakeup`);
+    console.warn(`[heartbeat-L0] ${code} stalled - re-firing wakeup`);
     rewakeAgent(code, w.ticketHumanId, w.reason || 're-wakeup');
     // Reset the wakeup timestamp so we don't re-fire every 30s.
     wakeups.set(code, { ...w, lastWakeupAt: now });
   }
 }
 
-// Per-agent scheduler — only fires for agents whose project_agents.json
+// Per-agent scheduler - only fires for agents whose project_agents.json
 // entry has wakeup_mode = "heartbeat". Reads the project agents list every
 // minute, schedules a wake for each at heartbeat_min cadence.
 import { invoke } from '@tauri-apps/api/core';
@@ -89,7 +89,7 @@ async function layer1Tick({ getRunningAgents }) {
     const intervalMs = Math.max(5, a.heartbeat_min || 60) * 60_000;
     if (now - last < intervalMs) continue;
     lastFiredAt.set(key, now);
-    const prompt = `\n\n[Yunomia heartbeat — ${a.code} — ${new Date().toISOString()}] Periodic check. Anything you should be doing? If queue empty, reply OK and go back to sleep.\n`;
+    const prompt = `\n\n[Yunomia heartbeat - ${a.code} - ${new Date().toISOString()}] Periodic check. Anything you should be doing? If queue empty, reply OK and go back to sleep.\n`;
     try { await writeToAgent(a.code, prompt); console.info(`[heartbeat] ${a.code} fired`); }
     catch (err) { console.warn(`[heartbeat] write failed for ${a.code}`, err); }
   }

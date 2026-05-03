@@ -1,4 +1,4 @@
-// PH-134 Phase 2 — file-backed sticky-model store + sentinel watcher.
+// PH-134 Phase 2 - file-backed sticky-model store + sentinel watcher.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-// PH-134 — Yunomia v3 owns its own state dir. NOT ~/.printpepper/. Decoupled
+// PH-134 - Yunomia v3 owns its own state dir. NOT ~/.printpepper/. Decoupled
 // from PrintPepper completely.
 fn yunomia_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
@@ -57,7 +57,7 @@ pub fn models_set(args: ModelsSetArgs) -> Result<(), String> {
     Ok(())
 }
 
-// PH-134 Phase 2 — sentinel watcher.
+// PH-134 Phase 2 - sentinel watcher.
 // Polls ~/.printpepper/ every 1s for `pre-compact-<AGENT>.done` files. On
 // appearance, emits `compact://ready` event with the agent code, then deletes
 // the sentinel. Frontend's compact orchestrator listens for this event.
@@ -90,7 +90,7 @@ pub fn start_sentinel_watcher(app: AppHandle) {
     });
 }
 
-// PH-134 Phase 3 — crash recovery / session enumeration.
+// PH-134 Phase 3 - crash recovery / session enumeration.
 // Lists Claude Code session JSONL files in `~/.claude/projects/<sanitised_cwd>/`
 // that have been touched recently. The sanitisation rule (per Anthropic) is to
 // replace each path separator and dot with `-`. Returns up to `limit` newest
@@ -147,7 +147,7 @@ pub fn enumerate_sessions(args: EnumerateArgs) -> Result<Vec<SessionInfo>, Strin
 // Context-window estimate. Reads the latest JSONL file for a (cwd) under
 // ~/.claude/projects/, returns byte size + a token estimate (bytes ÷ 4) +
 // percent of a 200K context window. Stand-in until Claude Code hooks emit
-// canonical <session>-stats.json — same shape will be returned then.
+// canonical <session>-stats.json - same shape will be returned then.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ContextEstimate {
     pub session_id: String,
@@ -183,7 +183,7 @@ pub fn agent_context_estimate(args: ContextEstimateArgs) -> Result<Option<Contex
     }
     let (path, _, bytes) = match newest { Some(x) => x, None => return Ok(None) };
     let session_id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-    let tokens_estimated = bytes / 4;       // rough — replace with hook stats once available
+    let tokens_estimated = bytes / 4;       // rough - replace with hook stats once available
     let percent = ((tokens_estimated * 100) / CONTEXT_WINDOW_TOKENS).min(100) as u32;
     Ok(Some(ContextEstimate {
         session_id,
@@ -213,7 +213,7 @@ pub fn delete_session(args: DeleteSessionArgs) -> Result<(), String> {
     Ok(())
 }
 
-// PH-134 Phase 3 — pty stdin audit log. Append every byte written to an agent's
+// PH-134 Phase 3 - pty stdin audit log. Append every byte written to an agent's
 // stdin to ~/.printpepper/pty-audit-<AGENT>.log with timestamp.
 pub fn audit_pty_write(agent_code: &str, data: &str) {
     let dir = audit_dir();

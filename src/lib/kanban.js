@@ -1,4 +1,4 @@
-// Yunomia — native vanilla-JS kanban for the dashboard tab.
+// Yunomia - native vanilla-JS kanban for the dashboard tab.
 //
 // Reads tickets/comments via Tauri commands backed by file storage at
 // ~/.yunomia/projects/<sanitised-cwd>/. No external server. No iframe.
@@ -207,7 +207,7 @@ function renderSide(t) {
   const types = ['bug','feature','doc','gate','migration','ops'].map((v) => `<option value="${v}"${v===t.type?' selected':''}>${v}</option>`).join('');
   const auds = ['app','admin'].map((v) => `<option value="${v}"${v===t.audience?' selected':''}>${v}</option>`).join('');
   const stats = COLUMNS.map((c) => `<option value="${c.id}"${c.id===t.status?' selected':''}>${c.label}</option>`).join('');
-  const agents = ['', 'CEO','SA','AD','WA','DA','QA','WD','TA','PETER'].map((a) => `<option value="${a}"${a===(t.assignee_agent||'')?' selected':''}>${a ? `${AGENT_EMOJI[a]||''} ${a}` : '— unassigned'}</option>`).join('');
+  const agents = ['', 'CEO','SA','AD','WA','DA','QA','WD','TA','PETER'].map((a) => `<option value="${a}"${a===(t.assignee_agent||'')?' selected':''}>${a ? `${AGENT_EMOJI[a]||''} ${a}` : '- unassigned'}</option>`).join('');
   const commentsHtml = k.comments
     .slice()
     .sort((a, b) => (a.created_at||'').localeCompare(b.created_at||''))

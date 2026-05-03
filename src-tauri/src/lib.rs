@@ -1,4 +1,4 @@
-// Yunomia — Tauri library entry. Spawns ptys, bridges them to the frontend
+// Yunomia - Tauri library entry. Spawns ptys, bridges them to the frontend
 // over Tauri events. Frontend mounts an xterm.js per pty. Project-agnostic.
 
 mod pty;

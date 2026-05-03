@@ -1,4 +1,4 @@
-// PTY layer — wraps portable-pty handles for the Tauri frontend.
+// PTY layer - wraps portable-pty handles for the Tauri frontend.
 //
 // Each pty is assigned a stable string ID by the frontend (typically the agent
 // code, e.g. "CEO", "QA"). The frontend invokes `pty_spawn` to start a
@@ -69,7 +69,7 @@ fn spawn_inner(
     app: tauri::AppHandle,
 ) -> Result<PtySummary> {
     // If a pty with this id is already registered (typically because the
-    // frontend reloaded — vite HMR — but the Rust side kept the prior child
+    // frontend reloaded - vite HMR - but the Rust side kept the prior child
     // alive), drop the old one first so the new spawn can take over cleanly.
     if registry.lock().remove(&args.id).is_some() {
         log::info!("dropping stale pty `{}` before respawn", args.id);
@@ -117,7 +117,7 @@ fn spawn_inner(
 
     registry.lock().insert(args.id.clone(), handle);
 
-    // Reader thread — forward stdout/stderr to frontend.
+    // Reader thread - forward stdout/stderr to frontend.
     let id_for_reader = args.id.clone();
     let app_for_reader = app.clone();
     thread::spawn(move || {
@@ -142,7 +142,7 @@ fn spawn_inner(
         log::info!("pty reader for {} exited", id_for_reader);
     });
 
-    // Wait thread — clean up on child exit.
+    // Wait thread - clean up on child exit.
     let id_for_wait = args.id.clone();
     let registry_for_wait = registry.clone();
     let app_for_wait = app.clone();
@@ -176,7 +176,7 @@ pub fn pty_write(args: WriteArgs, registry: State<'_, PtyRegistry>) -> Result<()
         .write_all(args.data.as_bytes())
         .map_err(|e| e.to_string())?;
     handle.writer.flush().map_err(|e| e.to_string())?;
-    // PH-134 Phase 3 — audit every byte written. Cheap, debug-critical.
+    // PH-134 Phase 3 - audit every byte written. Cheap, debug-critical.
     store::audit_pty_write(&args.id, &args.data);
     Ok(())
 }
@@ -188,7 +188,7 @@ pub struct ResizeArgs {
     pub rows: u16,
 }
 
-// PH-134 Q1 — wire TIOCSWINSZ on xterm fit.
+// PH-134 Q1 - wire TIOCSWINSZ on xterm fit.
 #[tauri::command]
 pub fn pty_resize(args: ResizeArgs, registry: State<'_, PtyRegistry>) -> Result<(), String> {
     let guard = registry.inner.lock();

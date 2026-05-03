@@ -1,4 +1,4 @@
-// Yunomia frontend — pane manager + xterm.js mounting per pty.
+// Yunomia frontend - pane manager + xterm.js mounting per pty.
 // Conventions:
 //   • Each pty has a stable string id (typically the AGENT code: "CEO", "QA").
 //   • Tauri events: `pty://output/<id>` carries stdout/stderr; `pty://exit/<id>` fires on child exit.
@@ -72,7 +72,7 @@ async function renderProjectPicker() {
   sel.innerHTML = '';
   if (!state.projects.length) {
     const opt = document.createElement('option');
-    opt.value = ''; opt.textContent = '(none — click to add)'; opt.disabled = true; opt.selected = true;
+    opt.value = ''; opt.textContent = '(none - click to add)'; opt.disabled = true; opt.selected = true;
     sel.appendChild(opt);
   } else {
     // Annotate with a 🔴 prefix when phase=onboarding for that project.
@@ -161,7 +161,7 @@ function setActivePane(id) {
   $$('#panes .pane').forEach((p) => p.classList.toggle('active', p.dataset.pane === id));
   const ent = state.ptys.get(id);
   if (ent) {
-    // The pane just transitioned from display:none to display:flex — its
+    // The pane just transitioned from display:none to display:flex - its
     // clientHeight only resolves after layout. Fit at multiple delays so the
     // first paint, the first reflow, and a 250 ms-late paint all converge.
     const f = () => { try { ent.fit.fit(); } catch {} };
@@ -237,7 +237,7 @@ async function submitSpawn() {
     void window.__renderProjectView?.();
   }
   const temp = $('#spawn-temp')?.checked || false;
-  // PH-134 Phase 3 — concurrency limit guard.
+  // PH-134 Phase 3 - concurrency limit guard.
   if (state.ptys.size >= state.maxConcurrent) {
     if (!confirm(`At concurrency limit (${state.maxConcurrent}). Spawn anyway?`)) return;
   }
@@ -264,7 +264,7 @@ async function refreshContextStats() {
         const status = deriveStatus(ent).state;
         noteContextPercent(ent.code, est.percent, status === 'idle');
       }
-    } catch (e) { /* ignore — file probably not there yet */ }
+    } catch (e) { /* ignore - file probably not there yet */ }
   }
 }
 setInterval(refreshContextStats, 5000);
@@ -277,7 +277,7 @@ function contextChipHtml(est) {
   return `<span class="cw-chip ${cls}" title="${est.tokens_estimated.toLocaleString()} tokens (~est) · session ${est.session_id.slice(0,8)}">${p}%</span>`;
 }
 
-// Composite key — same agent code can run independently per project.
+// Composite key - same agent code can run independently per project.
 // Must be Tauri-event-safe: only [A-Za-z0-9_-]. Slashes and pipes break
 // the `pty://output/<id>` event channel silently → black-screen pty.
 function ptyKey(cwd, code) {
@@ -340,7 +340,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   // against a 0×0 container and the term never grows.
   requestAnimationFrame(() => requestAnimationFrame(() => { try { fit.fit(); } catch {} }));
   setTimeout(() => { try { fit.fit(); } catch {} }, 200);
-  // Watch the container — any resize (window grows, devtools open, sidebar
+  // Watch the container - any resize (window grows, devtools open, sidebar
   // collapses) re-fits the terminal to fill the pane.
   const ro = new ResizeObserver(() => { try { fit.fit(); } catch {} });
   ro.observe(termWrap);
@@ -395,7 +395,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   //   --permission-mode acceptEdits   tiered-allowlist autonomy (internal trust)
   //   (project dir is the cwd; claude infers session there)
   // Crash-recovery resume path uses --resume <session_id>; passed via opts.resume.
-  // opts.kickoff = onboarding kickoff prompt — auto-pasted after spawn (Lead path).
+  // opts.kickoff = onboarding kickoff prompt - auto-pasted after spawn (Lead path).
   const args = ['--model', model, '--permission-mode', 'acceptEdits'];
   if (opts.resume) args.push('--resume', opts.resume);
   // Spawn the actual claude process with composite key as pty id.
@@ -416,7 +416,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   // Persist the sticky model so this agent re-spawns with the same one.
   try { await invoke('models_set', { args: { code, model } }); state.stickyModels[code] = model; }
   catch (e) { console.warn('models_set failed', e); }
-  // PH-134 onboarding — auto-paste the lead kickoff after pty boot. Two-second
+  // PH-134 onboarding - auto-paste the lead kickoff after pty boot. Two-second
   // delay so claude has finished its TUI splash before we shove the prompt in.
   // Determine kickoff content: explicit opts.kickoff (Lead bootstrap) wins,
   // else read the per-agent kickoff.md from the project. If empty, no paste.
@@ -441,17 +441,17 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   }
 }
 
-// PH-134 Phase 2 — wakeup prompt content.
+// PH-134 Phase 2 - wakeup prompt content.
 // For an already-running agent (the v3 case), the wakeup is a short ping;
 // the agent already loaded their full kickoff at spawn. Spawn-time kickoff
 // content can be wired later by reading SaaS Architect/<AGENT>-kickoff.md
-// (deferred — not strictly needed for Phase 2 smoke).
+// (deferred - not strictly needed for Phase 2 smoke).
 function buildWakeupPrompt({ ticketHumanId, reason, isBug }) {
   const ref = ticketHumanId ? ` (${ticketHumanId})` : '';
-  const base = `\n\n[Yunomia wakeup — ${reason}${ref}] Check your queue.`;
+  const base = `\n\n[Yunomia wakeup - ${reason}${ref}] Check your queue.`;
   if (!isBug) return base + '\n';
-  // Bug-specific enrichment — soul-level directive, restated at wake time.
-  return base + `\n\nBUG PROTOCOL — MANDATORY before fix code:\n  1. Open lessons.json for this project. Search for parallels by symptom, files, tags.\n  2. Post an in_progress comment that includes ONE of:\n       Lesson cited: BL-NNN — <how it applies>\n       No matching lessons in N reviewed\n  3. /handoff and /done are blocked by Yunomia's compliance engine until that line exists.\n  4. After fix, write a NEW Bug Lesson via the pending-lessons sentinel (see your kickoff).\n`;
+  // Bug-specific enrichment - soul-level directive, restated at wake time.
+  return base + `\n\nBUG PROTOCOL - MANDATORY before fix code:\n  1. Open lessons.json for this project. Search for parallels by symptom, files, tags.\n  2. Post an in_progress comment that includes ONE of:\n       Lesson cited: BL-NNN - <how it applies>\n       No matching lessons in N reviewed\n  3. /handoff and /done are blocked by Yunomia's compliance engine until that line exists.\n  4. After fix, write a NEW Bug Lesson via the pending-lessons sentinel (see your kickoff).\n`;
 }
 
 async function onWakeup(payload) {
@@ -481,7 +481,7 @@ async function onWakeup(payload) {
 function maybeDisposeTempAgent(agentCode) {
   const key = ptyKey(state.selectedProject, agentCode);
   if (!state.tempAgents.has(key)) return;
-  console.info(`[temp-agent] ${key} completed first task — auto-disposing in 30s`);
+  console.info(`[temp-agent] ${key} completed first task - auto-disposing in 30s`);
   state.tempAgents.delete(key);
   setTimeout(() => { void killPty(key); }, 30_000);
 }
@@ -505,14 +505,14 @@ function tabEmoji(code) {
   return e[code] || '⬛';
 }
 
-// Project picker — load + render at boot, drives spawn cwd + resume banner.
+// Project picker - load + render at boot, drives spawn cwd + resume banner.
 loadProjects();
 renderProjectPicker();
 bindProjectPicker();
 bindAddProjectModal();
 void refreshResumeBanner();
 
-// Status state machine — derived per pty from stdout/write timing + flags.
+// Status state machine - derived per pty from stdout/write timing + flags.
 function deriveStatus(ent) {
   if (!ent || ent.exited) return { state: 'idle', label: 'exited' };
   if (ent.blockedReason) return { state: 'blocked', label: ent.blockedReason };
@@ -525,7 +525,7 @@ function deriveStatus(ent) {
   return { state: 'idle', label: 'idle' };
 }
 
-// Render the agent rail. Project-scoped — shows ONLY agents that actually
+// Render the agent rail. Project-scoped - shows ONLY agents that actually
 // exist for this project (currently running ptys). No phantom 9-slot fleet.
 // New agents arrive via Lead's brief-approval flow OR explicit + Spawn agent.
 function renderAgentRail() {
@@ -538,7 +538,7 @@ function renderAgentRail() {
     <button id="ar-add" class="ar-add" title="Spawn agent">+</button>
   </div>`;
   if (!running.length) {
-    root.innerHTML = `${head}<div class="ar-empty">No agents in this project yet. Click <b>+</b> to spawn one — or let the brief's proposed agents auto-populate after approval.</div>`;
+    root.innerHTML = `${head}<div class="ar-empty">No agents in this project yet. Click <b>+</b> to spawn one - or let the brief's proposed agents auto-populate after approval.</div>`;
   } else {
     let stats;
     try { stats = getTicketStats(); } catch { stats = { byAgent: {} }; }
@@ -650,7 +650,7 @@ document.getElementById('filter-assignee')?.addEventListener('change', (e) => se
 document.getElementById('filter-type')?.addEventListener('change', (e) => setKanbanFilter('type', e.target.value));
 document.getElementById('filter-due')?.addEventListener('change', (e) => setKanbanFilter('due', e.target.value));
 
-// Agent proposal poller — Lead writes agent-proposal.json mid-project; we
+// Agent proposal poller - Lead writes agent-proposal.json mid-project; we
 // surface it as a modal. User approves → ingests, spawns, clears the file.
 async function proposalTick() {
   const cwd = state.selectedProject;
@@ -673,7 +673,7 @@ function showProposalModal(p) {
     <div class="proposal-row"><b>Why</b> ${escapeHtml(p.reason || '(no reason)')}</div>
   `;
   modal.querySelectorAll('.proposal-pre').forEach((el) => {
-    el.textContent = p[el.dataset.field] || '(default — Yunomia will fill in)';
+    el.textContent = p[el.dataset.field] || '(default - Yunomia will fill in)';
   });
   document.getElementById('proposal-approve').onclick = async () => {
     try {
@@ -694,7 +694,7 @@ function showProposalModal(p) {
   modal.classList.remove('hidden');
 }
 
-// Schedule poller — every 30s checks schedules_due_now; appends to inbox + osascript.
+// Schedule poller - every 30s checks schedules_due_now; appends to inbox + osascript.
 async function scheduleTick() {
   const cwd = state.selectedProject;
   if (!cwd) return;
@@ -704,7 +704,7 @@ async function scheduleTick() {
       await invoke('inbox_append', { args: {
         cwd, kind: 'schedule.due',
         ticketHumanId: d.ticket_human_id,
-        summary: `${d.ticket_human_id} scheduled time hit — ${d.ticket_title}`,
+        summary: `${d.ticket_human_id} scheduled time hit - ${d.ticket_title}`,
       }});
     }
     if (due.length) refreshInboxBadge();
@@ -713,7 +713,7 @@ async function scheduleTick() {
 setInterval(scheduleTick, 30_000);
 setTimeout(scheduleTick, 3000);
 
-// Pending-lessons poller — agents drop JSON into pending-lessons/, Yunomia
+// Pending-lessons poller - agents drop JSON into pending-lessons/, Yunomia
 // ingests them via lessons_create + deletes the file. 10 s tick.
 async function pendingLessonsTick() {
   const cwd = state.selectedProject;
@@ -737,7 +737,7 @@ async function pendingLessonsTick() {
 setInterval(pendingLessonsTick, 10_000);
 setTimeout(pendingLessonsTick, 4000);
 
-// Brief auto-refresh poll — preserves form inputs by only updating the
+// Brief auto-refresh poll - preserves form inputs by only updating the
 // brief <pre> content, not re-running the whole render.
 setInterval(async () => {
   if (document.getElementById('onboarding-root')?.hidden) return;
@@ -747,13 +747,13 @@ setInterval(async () => {
     const fresh = await invoke('brief_get', { args: { cwd } });
     const pre = document.querySelector('.onb-brief');
     if (pre && fresh) {
-      // Only update if changed — avoids cursor jump if user is selecting text.
+      // Only update if changed - avoids cursor jump if user is selecting text.
       if (pre.textContent !== fresh) pre.textContent = fresh;
     }
   } catch { /* ignore */ }
 }, 3000);
 
-// Project view switcher — onboarding (no project, or phase=onboarding) vs
+// Project view switcher - onboarding (no project, or phase=onboarding) vs
 // active (full kanban). Re-renders on project change + after brief approval.
 async function renderProjectView() {
   applyProjectVisibility();
@@ -793,7 +793,7 @@ async function renderProjectView() {
     });
     // Render brief preview panel above kanban (collapsed by default).
     document.getElementById('brief-name').textContent = projState.project_name || projectLabel(cwd);
-    document.getElementById('brief-content').textContent = brief || '(empty — Lead never wrote a brief?)';
+    document.getElementById('brief-content').textContent = brief || '(empty - Lead never wrote a brief?)';
     const reopenBtn = document.getElementById('brief-reopen');
     if (reopenBtn && !reopenBtn.dataset.bound) {
       reopenBtn.dataset.bound = '1';
@@ -951,7 +951,7 @@ bindSettings();
 // Restore maxConcurrent on boot.
 state.maxConcurrent = parseInt(localStorage.getItem('yunomia.maxConcurrent') || '3', 10);
 
-// Keyboard shortcuts — match IDE muscle memory.
+// Keyboard shortcuts - match IDE muscle memory.
 //   Cmd+T  = open spawn-agent modal (when active phase)
 //   Cmd+W  = close current tab (if not Dashboard)
 //   Cmd+1..9 = switch to nth tab
@@ -982,7 +982,7 @@ window.addEventListener('keydown', (e) => {
 
 bindUi();
 
-// PH-134 Phase 2 — bridge to MC + auto-compact orchestrator.
+// PH-134 Phase 2 - bridge to MC + auto-compact orchestrator.
 void initCompactOrchestrator();
 startMcBridge({
   getRunningAgents: () => Array.from(state.ptys.keys()),
@@ -993,13 +993,13 @@ startMcBridge({
   },
 });
 
-// Heartbeat — per-agent. Agents with wakeup_mode=heartbeat fire on cron.
+// Heartbeat - per-agent. Agents with wakeup_mode=heartbeat fire on cron.
 startHeartbeat({
   getRunningAgents: () => visibleAgents().map(({ ent }) => ent.code),
   rewakeAgent: (code, ticketHumanId, reason) => onWakeup({ agentCode: code, ticketHumanId, reason }),
 });
 
-// PH-134 Phase 3 — crash recovery. Enumerates recent Claude sessions for the
+// PH-134 Phase 3 - crash recovery. Enumerates recent Claude sessions for the
 // currently-selected project root and renders a banner offering Resume.
 async function refreshResumeBanner() {
   document.querySelectorAll('.resume-banner').forEach((b) => b.remove());

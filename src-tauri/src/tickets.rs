@@ -1,4 +1,4 @@
-// Yunomia — file-backed per-project ticket store. Self-contained, no external API.
+// Yunomia - file-backed per-project ticket store. Self-contained, no external API.
 //
 // Layout:
 //   ~/.yunomia/projects/<sanitised-cwd>/tickets.json
@@ -413,7 +413,7 @@ pub fn pending_lessons_scan(args: PendingLessonsScanArgs) -> Result<Vec<Lesson>,
     Ok(ingested)
 }
 
-// Agent proposals — Lead writes a JSON file to ask the user to spawn a new
+// Agent proposals - Lead writes a JSON file to ask the user to spawn a new
 // agent mid-project. Yunomia polls the file, surfaces a modal, ingests on
 // approve. Single proposal at a time (Lead overwrites).
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -489,19 +489,19 @@ fn default_text(opt: &Option<String>, fallback: &str) -> String {
     opt.as_deref().filter(|s| !s.trim().is_empty()).map(String::from).unwrap_or_else(|| fallback.into())
 }
 fn default_soul(code: &str, reason: &str) -> String {
-    format!("# {} — Soul\n\nRole proposed by Lead: {}\n\n## Voice\n- Direct, technical, terse.\n- Pushes back on fuzzy scope.\n- Cites evidence over opinion.\n\n## Expertise\n(populate during onboarding)\n\n## Bug protocol — MANDATORY\nBefore writing a single line of code on any `type=bug` ticket:\n\n1. Read `~/.yunomia/projects/<this-project>/lessons.json`.\n2. Search for parallels by symptom, files, tags.\n3. In your in_progress comment, add ONE of these verbatim:\n     - `Lesson cited: BL-NNN — <one-line summary of how it applies>`\n     - `Lessons cited: BL-NNN, BL-MMM — <how they apply>`\n     - `No matching lessons in N reviewed`\n   (Yunomia's compliance engine blocks /handoff and /done until this line exists.)\n4. If a parallel exists, *use* it — start from the cited fix unless you can articulate why this is structurally different.\n5. After the bug is closed, write a new Bug Lesson via the sentinel-file flow (see kickoff).\n\n## Operating principles\n- Single-task focus.\n- Document decisions in tickets, not chat.\n- File a bug lesson on every defect closure.\n", code, reason)
+    format!("# {} - Soul\n\nRole proposed by Lead: {}\n\n## Voice\n- Direct, technical, terse.\n- Pushes back on fuzzy scope.\n- Cites evidence over opinion.\n\n## Expertise\n(populate during onboarding)\n\n## Bug protocol - MANDATORY\nBefore writing a single line of code on any `type=bug` ticket:\n\n1. Read `~/.yunomia/projects/<this-project>/lessons.json`.\n2. Search for parallels by symptom, files, tags.\n3. In your in_progress comment, add ONE of these verbatim:\n     - `Lesson cited: BL-NNN - <one-line summary of how it applies>`\n     - `Lessons cited: BL-NNN, BL-MMM - <how they apply>`\n     - `No matching lessons in N reviewed`\n   (Yunomia's compliance engine blocks /handoff and /done until this line exists.)\n4. If a parallel exists, *use* it - start from the cited fix unless you can articulate why this is structurally different.\n5. After the bug is closed, write a new Bug Lesson via the sentinel-file flow (see kickoff).\n\n## Operating principles\n- Single-task focus.\n- Document decisions in tickets, not chat.\n- File a bug lesson on every defect closure.\n", code, reason)
 }
 fn default_kickoff(code: &str, reason: &str) -> String {
-    format!("You are {} — newly spawned by the project Lead.\n\nReason: {}\n\nFirst-wake actions:\n1. Read your soul, goals, and the project brief.\n2. Check your queue (assigned tickets in this project's kanban — `tickets.json`).\n3. If queue is empty, idle until something lands.\n\nFiling a Bug Lesson (after closing a `type=bug` ticket):\n- Write the lesson as JSON to `~/.yunomia/projects/<sanitised-cwd>/pending-lessons/<uuid>.json`.\n- Yunomia ingests within 10 s and removes the file.\n- Schema:\n   {{\n     \"symptom\": \"<one sentence>\",\n     \"severity\": \"low|medium|high|critical\",\n     \"ticket_id\": \"<uuid>\",\n     \"ticket_human_id\": \"<PRJ-NNN>\",\n     \"root_cause\": \"...\",\n     \"fix\": \"...\",\n     \"files_changed\": \"comma-separated paths\",\n     \"recognise_pattern\": \"how to spot this next time\",\n     \"prevent_action\": \"what to bake into testing/review to stop recurrence\",\n     \"tags\": [\"...\"],\n     \"created_by\": \"{}\"\n   }}\n\nBug protocol (also in your soul): always consult `lessons.json` BEFORE writing fix code. Cite the BL or state \"No matching lessons in N reviewed\" in your in_progress comment.\n", code, reason, code)
+    format!("You are {} - newly spawned by the project Lead.\n\nReason: {}\n\nFirst-wake actions:\n1. Read your soul, goals, and the project brief.\n2. Check your queue (assigned tickets in this project's kanban - `tickets.json`).\n3. If queue is empty, idle until something lands.\n\nFiling a Bug Lesson (after closing a `type=bug` ticket):\n- Write the lesson as JSON to `~/.yunomia/projects/<sanitised-cwd>/pending-lessons/<uuid>.json`.\n- Yunomia ingests within 10 s and removes the file.\n- Schema:\n   {{\n     \"symptom\": \"<one sentence>\",\n     \"severity\": \"low|medium|high|critical\",\n     \"ticket_id\": \"<uuid>\",\n     \"ticket_human_id\": \"<PRJ-NNN>\",\n     \"root_cause\": \"...\",\n     \"fix\": \"...\",\n     \"files_changed\": \"comma-separated paths\",\n     \"recognise_pattern\": \"how to spot this next time\",\n     \"prevent_action\": \"what to bake into testing/review to stop recurrence\",\n     \"tags\": [\"...\"],\n     \"created_by\": \"{}\"\n   }}\n\nBug protocol (also in your soul): always consult `lessons.json` BEFORE writing fix code. Cite the BL or state \"No matching lessons in N reviewed\" in your in_progress comment.\n", code, reason, code)
 }
 fn default_pre_compact(code: &str) -> String {
-    format!("/pre-compact for {}.\n\nSummarise (200–500 words):\n- Tickets touched this session (human ids + verdict).\n- Open questions you didn't get to.\n- Files modified.\n- Lessons learnt (file them via the pending-lessons sentinel BEFORE /compact — see your kickoff).\n- State you'll need to resume cleanly post-compact.\n\nThen trigger /compact.\n", code)
+    format!("/pre-compact for {}.\n\nSummarise (200–500 words):\n- Tickets touched this session (human ids + verdict).\n- Open questions you didn't get to.\n- Files modified.\n- Lessons learnt (file them via the pending-lessons sentinel BEFORE /compact - see your kickoff).\n- State you'll need to resume cleanly post-compact.\n\nThen trigger /compact.\n", code)
 }
 fn default_reawaken(code: &str) -> String {
-    format!("Reawaken — {}\n\nYou were /compact'd. Read your soul + goals + the most recent BL filed under this project. Then check your queue. If you find a stale in_progress ticket assigned to you, resume it.\n", code)
+    format!("Reawaken - {}\n\nYou were /compact'd. Read your soul + goals + the most recent BL filed under this project. Then check your queue. If you find a stale in_progress ticket assigned to you, resume it.\n", code)
 }
 
-// Schedules — per-ticket scheduled_for.
+// Schedules - per-ticket scheduled_for.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Schedule {
     pub ticket_id: String,
@@ -574,7 +574,7 @@ pub fn schedules_due_now(args: SchedulesListArgs) -> Result<Vec<Schedule>, Strin
     Ok(due)
 }
 
-// Activity feed — read audit.json (newest first).
+// Activity feed - read audit.json (newest first).
 #[derive(Deserialize)]
 pub struct AuditListArgs { pub cwd: String, pub limit: Option<usize> }
 #[tauri::command]
@@ -587,7 +587,7 @@ pub fn audit_list(args: AuditListArgs) -> Result<Vec<AuditEntry>, String> {
     Ok(list)
 }
 
-// Per-project inbox — events the user wants surfaced (e.g. ticket assigned to
+// Per-project inbox - events the user wants surfaced (e.g. ticket assigned to
 // them, comments on their tickets, scheduled-due hits). Append-only JSONL.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct InboxEntry {
@@ -648,7 +648,7 @@ pub fn inbox_mark_all(args: InboxMarkAllArgs) -> Result<u32, String> {
     Ok(n)
 }
 
-// Per-agent files — kickoff / goals / soul. Stored under agents/<CODE>/{file}.
+// Per-agent files - kickoff / goals / soul. Stored under agents/<CODE>/{file}.
 #[derive(Deserialize)]
 pub struct AgentFileArgs { pub cwd: String, pub code: String, pub kind: String }     // kind: kickoff | goals | soul
 #[tauri::command]
@@ -667,7 +667,7 @@ pub fn agent_file_write(args: AgentFileWriteArgs) -> Result<(), String> {
     fs::write(dir.join(format!("{}.md", args.kind)), args.markdown).map_err(|e| e.to_string())
 }
 
-// Project agents roster — list of {code, model, wakeup_mode, heartbeat_min}.
+// Project agents roster - list of {code, model, wakeup_mode, heartbeat_min}.
 // Persisted at agents.json. Source of truth for who's "in" this project.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProjectAgent {
@@ -712,7 +712,7 @@ pub fn project_agents_remove(args: AgentsRemoveArgs) -> Result<(), String> {
     write_json(&path, &list)
 }
 
-// Reports — daily summary.
+// Reports - daily summary.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ReportsSummary {
     pub open: u32,
@@ -753,7 +753,7 @@ impl Default for ReportsSummary {
     }
 }
 
-// Compliance — minimal: per-ticket eligible-actions + global kill-switch.
+// Compliance - minimal: per-ticket eligible-actions + global kill-switch.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EligibleActions {
     pub can_start: bool,    pub start_reason: Option<String>,
@@ -816,12 +816,12 @@ pub fn eligible_actions(args: EligibleArgs) -> Result<EligibleActions, String> {
             e.done_reason = Some("Bug ticket can't /done without a Bug Lesson capturing this fix.".into());
         }
     }
-    // QA gate: bugs need a verdict comment matching ## QA — PASS.
+    // QA gate: bugs need a verdict comment matching ## QA - PASS.
     if t.r#type == "bug" && t.status == "in_review" && e.can_done {
-        let qa_passed = comments.iter().any(|c| c.ticket_id == t.id && c.body_md.contains("## QA — ") && c.body_md.contains("PASS"));
+        let qa_passed = comments.iter().any(|c| c.ticket_id == t.id && c.body_md.contains("## QA - ") && c.body_md.contains("PASS"));
         if !qa_passed {
             e.can_done = false;
-            e.done_reason = Some("Bug ticket needs a `## QA — … — PASS` verdict comment.".into());
+            e.done_reason = Some("Bug ticket needs a `## QA - … - PASS` verdict comment.".into());
         }
     }
     Ok(e)
@@ -871,7 +871,7 @@ pub fn kill_switch_set(args: KillSwitchSetArgs) -> Result<KillSwitch, String> {
     Ok(ks)
 }
 
-// Bug Lessons — file-backed per-project at lessons.json. Schema mirrors
+// Bug Lessons - file-backed per-project at lessons.json. Schema mirrors
 // MC v0.3's lesson contract (symptom / root cause / fix / files / recognise /
 // prevent + tags + severity).
 #[derive(Serialize, Deserialize, Clone, Debug)]

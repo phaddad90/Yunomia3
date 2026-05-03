@@ -1,40 +1,38 @@
-# Yunomia
+# Yunomia3
 
-A multi-agent orchestration shell for any project. Open Yunomia, point it at a folder, talk to a Lead agent about your goals, and it will scope the work, propose an agent fleet, and file the initial tickets. From there you have one window with a kanban, ticket inbox, bug-lessons archive, activity feed, and a real `claude` CLI session per agent — all per-project, all file-backed locally.
+A multi-agent orchestration shell for any project. Open Yunomia, point it at a folder, talk to a Lead agent about your goals, and it will scope the work, propose an agent fleet, and file the initial tickets. From there you have one window with a kanban, ticket inbox, bug-lessons archive, activity feed, and a real Claude Code session per agent. Everything is per-project and file-backed locally.
 
-> Built with Tauri 2 + portable-pty + xterm.js. Vanilla JS frontend, no framework. Apple Silicon and Windows binaries.
+> Built on Tauri 2 + portable-pty + xterm.js. Vanilla JS frontend, no framework. macOS Apple Silicon, macOS Intel, Windows, and Linux binaries.
 
 ---
 
 ## What you get
 
-- **Project picker** — Yunomia tracks any number of project roots. Each project is independent: own kanban, own agent fleet, own brief, own state, own audit log.
-- **Onboarding** — first time you open a project, the Lead agent interviews you about goals, scope, constraints, deploy targets. Writes your evolving understanding to `brief.md`. Proposes agents + tickets. You approve, Yunomia auto-spawns the heartbeat agents and creates the tickets.
-- **Live kanban** — 7-column (Backlog → Triage → Assigned → In Progress → In Review → Done → Released). Click any card for a side panel: title click-to-edit, type / audience / assignee / status selects, body ✏ pencil, comment thread, schedule picker, Start / Handoff / Done.
-- **Bug lessons** — when a `type=bug` ticket transitions to done, you're prompted to capture a Bug Lesson (BL-NNN) with symptom / root cause / fix / files / recognise pattern / prevent action / tags. Browseable archive.
-- **Schedules** — set a `scheduled_for` on any ticket. Cards show 🔔 + relative time, red when overdue. A 30 s poller fires inbox notifications when due.
-- **Inbox** — per-project notification queue with unprocessed badge. Schedules due, ticket assignments, comments, bug closures, agent proposals.
-- **Activity feed** — read-only audit log of every transition / comment / lesson capture / agent change.
-- **Reports** — today's open / in progress / in review / done summary, plus by-agent active counts.
-- **Agent rail** — only shows agents actually in this project. Each row: emoji + code + status (working/waiting/blocked/idle) + colored pulse dot + ticket count + context % chip + per-agent PRE / CMPCT buttons + open-tab + kill.
-- **Per-agent files** — every agent has `soul.md / kickoff.md / pre-compact.md / reawaken.md` editable in the Agents sub-tab.
-- **Per-agent wakeup mode** — `heartbeat` (cron-fires every N minutes even with no work) for orchestrators like Lead/CEO; `on-assignment` (wakes only when ticketed) for workers. Configurable per agent.
-- **Lead-proposed mid-project agents** — Lead writes `agent-proposal.json` to ask for a new agent. Yunomia surfaces a modal with previews of soul / kickoff / pre-compact / reawaken; click Approve and the four files are scaffolded + the agent is spawned.
-- **Auto-compact at 50%** — when an agent's context hits 50% AND it's idle, `/pre-compact` fires automatically. Manual PRE / CMPCT buttons in the agent rail.
-- **Crash recovery** — Yunomia closes mid-conversation? On reopen, a banner offers Resume buttons for recent Claude sessions in the project. Per-session 🗑 to delete.
-- **Compliance hooks** — `eligible_actions` + kill-switch backend ready (UI consumption is ongoing).
-- **Drag-resizable rails** — left agent rail and right new-ticket rail both resize. Persisted.
-- **Light / Dark / Auto theme** — Settings (⚙ in topbar). Auto follows OS.
+- **Project picker** that tracks any number of project roots. Each project is fully independent: its own kanban, agent fleet, brief, state, and audit log.
+- **Onboarding flow.** First time you open a project, the Lead agent interviews you about goals, scope, constraints, and deploy targets. It writes your understanding to `brief.md`, proposes an agent fleet plus an initial ticket list, and you approve. Yunomia then auto-spawns the heartbeat agents and creates the tickets.
+- **Live kanban** with seven columns (Backlog, Triage, Assigned, In Progress, In Review, Done, Released). Click any card for a side panel: title click-to-edit, type, audience, assignee, status, body editor with a pencil toggle, comment thread, schedule picker, and Start, Handoff, Done actions.
+- **Bug lessons.** Agents (not you) capture lessons after closing a bug, via a sentinel-file flow. Browseable archive at `BL-NNN`. Compliance engine blocks `/handoff` and `/done` on bug tickets until the agent has consulted the lessons archive and cited a parallel or stated none was found.
+- **Schedules.** Set a `scheduled_for` on any ticket. Cards show a bell with relative time, red when overdue. A 30 second poller fires inbox notifications when due.
+- **Inbox** is a per-project notification queue with an unprocessed-count badge. Schedules due, ticket assignments, comments, bug closures, agent proposals, and lesson ingests all land here.
+- **Activity feed** is a read-only audit log of every transition, comment, lesson capture, and agent change.
+- **Reports** show today's open, in progress, in review, and done counts plus an active-tickets-per-agent breakdown.
+- **Agent rail** shows only agents actually in this project. Each row carries an emoji, code, status (working, waiting, blocked, idle), colored pulse dot, ticket count, context-percent chip, per-agent PRE and CMPCT buttons, plus open-tab and kill controls.
+- **Per-agent files.** Every agent has `soul.md`, `kickoff.md`, `pre-compact.md`, and `reawaken.md`, editable in the Agents sub-tab. The bug protocol is baked into the default soul and kickoff so every spawned agent inherits it.
+- **Per-agent wakeup mode.** Either `heartbeat` (cron-fires every N minutes even with no work) for orchestrators like Lead and CEO, or `on-assignment` (wakes only when a ticket lands) for workers. Configurable per agent.
+- **Lead-proposed mid-project agents.** Lead writes `agent-proposal.json` to ask for a new agent. Yunomia surfaces a modal with previews of the soul, kickoff, pre-compact, and reawaken templates. Approve and the four files are scaffolded plus the agent is spawned.
+- **Auto-compact at 50% context** when an agent is idle. Manual PRE and CMPCT buttons live in each agent rail row.
+- **Crash recovery.** Close Yunomia mid-conversation, and on reopen a banner offers Resume buttons for the recent Claude sessions in this project. Each entry has a trash button to delete the session permanently.
+- **Compliance engine.** Backend ready for eligible-actions, single-task focus, bug-protocol gate, and a global kill-switch. UI consumption is rolling out.
+- **Drag-resizable rails.** Both the left agent rail and the right new-ticket rail resize. Persisted across launches.
+- **Light, Dark, or Auto theme.** Theme controls the entire UI including the terminal panes. Auto follows your OS setting.
 
 ---
 
 ## Install
 
-### macOS (Apple Silicon + Intel)
+### macOS (Apple Silicon and Intel)
 
-Download the latest `.dmg` from [Releases](https://github.com/phaddad90/Yunomia3/releases). Drag Yunomia.app to /Applications.
-
-> **First-launch on macOS**: until the app is notarized you'll see "Yunomia is from an unidentified developer." Right-click the app → Open → Open to bypass once. After signing + notarization (see *Building & signing* below) this prompt is gone.
+Grab the latest signed `.dmg` from [Releases](https://github.com/phaddad90/Yunomia3/releases). Drag Yunomia.app into Applications. The app is signed and notarized with Peter's Apple Developer account, so it opens normally on first launch.
 
 ### Windows
 
@@ -42,110 +40,91 @@ Download the latest `.msi` from [Releases](https://github.com/phaddad90/Yunomia3
 
 ### Linux
 
-Download the latest `.AppImage` or `.deb` from [Releases](https://github.com/phaddad90/Yunomia3/releases).
+Download the `.AppImage` (run directly) or `.deb` (install with `sudo dpkg -i`) from [Releases](https://github.com/phaddad90/Yunomia3/releases).
 
 ---
 
 ## Prerequisites
 
-- **`claude` CLI** on `PATH` — Yunomia spawns this for each agent pty. If `which claude` returns nothing, Yunomia panes will be empty. Install from [claude.com/claude-code](https://claude.com/claude-code).
-- That's it. Everything else (project state, brief, tickets, lessons, audit, agent files) lives at `~/.yunomia/projects/<sanitised-cwd>/`.
+- **`claude` CLI on PATH.** Yunomia spawns it for each agent's pty. If `which claude` (macOS / Linux) or `where claude` (Windows) returns nothing, the agent panes will be empty. Install from [claude.com/claude-code](https://claude.com/claude-code).
+- That is the only external dependency. All Yunomia state lives at `~/.yunomia/projects/<sanitised-cwd>/`.
 
 ---
 
 ## How to use
 
-### 1. Add your first project
+### 1. Add a project
 
-- Click **+ Spawn agent**? No — first add a project. Top-bar **Project ▼ → + Add project…** → use the Browse… button to pick a folder. Project name auto-defaults to the folder basename.
+In the top bar, open the **Project** dropdown and pick `+ Add project...`. A modal opens. Use the Browse button to choose a folder, or paste an absolute path. The project name defaults to the folder basename. Click Add.
 
 ### 2. Onboarding
 
-- Yunomia opens the **Onboarding view** for new projects. Click **Spawn lead agent**.
-- A new `🧭 LEAD` tab opens with `claude` running in your project. The founder kickoff auto-pastes after ~2.5 s and Lead starts the interview.
-- Answer questions in the LEAD tab. Lead writes `brief.md` incrementally as you talk. Switch to the Dashboard tab to watch the brief grow live.
-- When ready, Lead writes `proposed-tickets.json` and `proposed-agents.json` to your project state dir.
-- Click **Approve brief — go active**. Yunomia ingests the proposals: creates each ticket, populates the agent roster, auto-spawns heartbeat agents.
+Yunomia opens the **Onboarding view** for new projects. Click **Spawn lead agent**.
+
+A new LEAD tab opens with `claude` running in your project root. The founder kickoff auto-pastes after about two and a half seconds and Lead starts the interview.
+
+Answer questions in the LEAD tab. Lead writes `brief.md` incrementally as you talk. Switch to the Dashboard tab to watch the brief grow live.
+
+When ready, Lead writes `proposed-tickets.json` and `proposed-agents.json` to your project state directory.
+
+Click **Approve brief, go active**. Yunomia ingests the proposals: it creates each ticket, populates the agent roster, and auto-spawns the agents marked `heartbeat`.
 
 ### 3. Active mode
 
-- Dashboard sub-tabs: **Kanban / Activity / Inbox / Lessons / Reports / Agents**.
-- Kanban filters: search, assignee, type, due. Click any card → side panel with all editing affordances.
-- Lessons tab captures + browses Bug Lessons. Bug-close hook auto-prompts when a `type=bug` ticket transitions to done.
-- Agents tab is the project's roster config: per-agent model + wakeup mode (heartbeat | on-assignment) + heartbeat interval + collapsible Kickoff / Goals / Soul markdown editors.
-- **Lead can propose new agents mid-project** — writes `agent-proposal.json`; Yunomia surfaces a modal; you approve, files are scaffolded, agent spawns.
+The Dashboard tab now shows sub-tabs: **Kanban**, **Activity**, **Inbox**, **Lessons**, **Reports**, and **Agents**.
+
+- **Kanban** has a filter bar (search, assignee, type, due). Click any card for a side panel with all editing affordances and a schedule picker.
+- **Lessons** lists every Bug Lesson agents have captured. The bug-close hook reminds the assigned agent to file a lesson via the sentinel-file flow.
+- **Agents** is the project's roster config. Per-agent: model, wakeup mode, heartbeat interval, plus collapsible Kickoff, Goals, and Soul markdown editors.
+
+Lead can propose new agents at any time during the project. When it writes `agent-proposal.json`, Yunomia surfaces a modal so you can approve or reject. Approving scaffolds the four agent files, adds the agent to the roster, and (if `heartbeat`) spawns it.
 
 ### 4. Per-agent compact
 
-- Each agent rail row has **PRE** and **CMPCT** buttons.
-- Auto-compact fires automatically at 50 % context when the agent is idle.
+Each agent rail row has **PRE** (run `/pre-compact`) and **CMPCT** (run `/compact`) buttons.
+
+Auto-compact also fires at 50% context when the agent is idle, so you usually do not need the buttons.
 
 ### 5. Switching projects
 
-- Top-bar Project picker. 🔴 prefix indicates onboarding hasn't completed yet.
-- Each project is fully isolated: separate ptys, separate kanban, separate everything.
+Use the top bar Project picker. A red dot prefix means onboarding has not yet been approved for that project.
 
-### 6. Closing & resuming
+Each project is fully isolated: separate ptys, separate kanban, separate everything.
 
-- Close the window any time. Conversation history is in `~/.claude/projects/...`.
-- On reopen, a yellow banner offers **Resume** for the 3 most recent sessions in the current project. Per-entry 🗑 to delete a session permanently.
+### 6. Closing and resuming
+
+Close the window any time. Conversation history lives in `~/.claude/projects/...`.
+
+On reopen, a yellow banner offers Resume buttons for the three most recent sessions in the current project. Each entry has a trash icon to delete that session permanently.
 
 ---
 
 ## Keyboard shortcuts
 
-| Shortcut | Action |
-|---|---|
-| ⌘T | Spawn agent (active phase only) |
-| ⌘W | Close current pty tab |
-| ⌘1 – ⌘9 | Switch to nth visible tab |
-| ⌘R | Reload Yunomia |
+| Action | macOS | Windows / Linux |
+|---|---|---|
+| Spawn agent (active phase only) | ⌘T | Ctrl+T |
+| Close current pty tab | ⌘W | Ctrl+W |
+| Switch to tab N | ⌘1 to ⌘9 | Ctrl+1 to Ctrl+9 |
+| Reload Yunomia | ⌘R | Ctrl+R |
+| Open Settings | click the gear icon | click the gear icon |
 
 ---
 
-## Building from source
+## Bug protocol (how agents work bugs)
 
-```bash
-git clone https://github.com/phaddad90/Yunomia3.git
-cd Yunomia3
-npm install
-npm run dev          # Tauri dev — vite + cargo run, opens window
-```
+This is enforced by Yunomia's compliance engine, baked into every default agent soul and kickoff, and re-stated in the wakeup prompt that fires when a bug ticket lands on an agent.
 
-Production build:
+1. The agent receives a wakeup carrying the bug protocol directive.
+2. Before writing fix code, the agent reads `lessons.json` for the project and searches for parallels by symptom, files, and tags.
+3. The agent posts an in_progress comment containing one of these lines verbatim:
+   - `Lesson cited: BL-NNN, <how it applies>`
+   - `Lessons cited: BL-NNN, BL-MMM, <how they apply>`
+   - `No matching lessons in N reviewed`
+4. The compliance engine blocks `/handoff` and `/done` on bug tickets until that line is present.
+5. After closing the bug, the agent writes a new lesson as JSON to `~/.yunomia/projects/<sanitised-cwd>/pending-lessons/<uuid>.json`. Yunomia ingests within 10 seconds, archives it as `BL-NNN`, drops it into the inbox, and removes the sentinel file.
 
-```bash
-npm run build        # vite build + cargo build --release + bundle
-# .app / .dmg lands in src-tauri/target/release/bundle/
-```
-
-### macOS code signing & notarization
-
-Once you have an Apple Developer account ($99/year) and a Developer ID Application certificate in Keychain:
-
-1. Edit `src-tauri/tauri.conf.json` → `bundle.macOS.signingIdentity` to your cert's common name, e.g. `"Developer ID Application: Your Name (TEAMID)"`.
-2. Set notarization env vars (read by Tauri's bundler):
-   ```bash
-   export APPLE_ID="you@example.com"
-   export APPLE_PASSWORD="app-specific-password"  # generate at appleid.apple.com
-   export APPLE_TEAM_ID="ABCDEFGHIJ"
-   ```
-3. `npm run build`. The bundler signs + submits for notarization automatically. The resulting `.dmg` will install without the "unidentified developer" prompt.
-
-### Windows build (from macOS or CI)
-
-Easiest path is GitHub Actions — see `.github/workflows/release.yml`. To build locally on Windows:
-
-```powershell
-npm install
-npm run build
-```
-
-Produces `.msi` in `src-tauri\target\release\bundle\msi\`.
-
-### Releases via GitHub Actions
-
-Push a tag matching `v*.*.*` (e.g. `git tag v0.1.0 && git push origin v0.1.0`). Actions builds for macOS + Windows + Linux and uploads artifacts to Releases automatically.
+The schema for the sentinel file is documented in every agent's default `kickoff.md`.
 
 ---
 
@@ -155,36 +134,57 @@ Everything Yunomia writes lives at `~/.yunomia/projects/<sanitised-cwd>/`:
 
 ```
 agents/<CODE>/{kickoff,goals,soul,pre-compact,reawaken}.md
-agents.json              # project roster
-audit.json               # transition / comment / lesson log
-brief.md                 # canonical project scope (Lead writes here)
-comments.json            # ticket comments
-inbox.json               # notification queue
-kill-switch.json         # compliance kill-switch state
-lessons.json             # Bug Lessons (BL-NNN)
-prefix.txt               # 3-letter ticket id prefix derived from project name
-schedules.json           # scheduled_for per ticket
-state.json               # project lifecycle (onboarding / active)
-tickets.json             # all tickets
+agents.json              project roster
+audit.json               transition / comment / lesson log
+brief.md                 canonical project scope (Lead writes here)
+comments.json            ticket comments
+inbox.json               notification queue
+kill-switch.json         compliance kill-switch state
+lessons.json             Bug Lessons (BL-NNN)
+pending-lessons/         agent-written lesson sentinels (auto-ingested)
+prefix.txt               3-letter ticket id prefix derived from project name
+schedules.json           scheduled_for per ticket
+state.json               project lifecycle (onboarding / active)
+tickets.json             all tickets
 ```
 
 Plus globally:
 
 ```
-~/.yunomia/agent-models.json     # sticky model picks
-~/.yunomia/pty-audit-<CODE>.log  # everything Yunomia wrote to each agent's stdin
+~/.yunomia/agent-models.json     sticky model picks
+~/.yunomia/pty-audit-<CODE>.log  every byte Yunomia wrote to each agent's stdin
 ```
 
-**Sanitised cwd** = absolute path with `/` replaced by `-` and spaces by `_`.
+`<sanitised-cwd>` is the absolute path with `/` replaced by `-` and spaces replaced by `_`.
+
+---
+
+## Research and development history
+
+Yunomia is the third generation of an evolving experiment in turning a fleet of Claude Code sessions into something that behaves like a focused team rather than a pile of terminals. The arc:
+
+### v1: Project Yunomia (concept stage)
+
+The first attempt was raw: shell scripts, file-backed kickoffs, manual paste-relay between an orchestrator and worker terminals. It proved the core idea (multiple Claude Code sessions playing distinct roles, coordinating through written verdicts and a shared task list) but the operating overhead was high. Every wakeup, every handoff, every lesson capture was Peter typing.
+
+### v2: Mission Control (PrintPepper, 2026 Q1 to Q2)
+
+Mission Control was the working version of v1: a single-tenant browser dashboard at `localhost:4600` riding on top of PrintPepper's admin API. It introduced the seven-column kanban, the agent rail with traffic-light status, the per-ticket comment thread, the Bug Lessons archive (BL-NNN), the CEO inbox, the schedule poller, the heartbeat ticker, the file-backed kickoff and soul documents, and the compliance engine (`single-task-focus`, `qa-pass-required`, `bug-needs-lesson`, `patch-snake-case-rejected`, kill-switch, lint warnings).
+
+Across roughly 130 tickets (PH-001 through PH-130-ish, on the `feature/printpepper-mission-control` branch), the system grew from a kanban viewer to a real orchestration surface. By the end of v2 the agents were filing their own lessons, the heartbeat was nudging stuck agents, and the compliance engine was rejecting bad ticket transitions. The drift point was that everything was tied to one company (PrintPepper), one admin API, one localhost server. It worked, but it could not move.
+
+### v3: Yunomia (this repo)
+
+v3 keeps the v2 operating model and packages it as a portable desktop application. Tauri shell, ptys hosting real Claude Code sessions, embedded kanban with no external server, file-backed everything at `~/.yunomia/`, project-agnostic by design, signed binaries for macOS and Windows.
+
+The design decisions that survived from v2: file-backed kickoffs and souls (PH-090), the seven-column kanban (PH-051 through PH-097), Bug Lessons schema (PH-088 to PH-098), the per-agent traffic-light rail (PH-080, PH-094), Mission Control as a single window (PH-061 design doc), the auto-compact-at-50% rule (Peter's `feedback_compact_at_50pct.md`), and the compliance engine pattern (PH-123 convergence, PH-126 deploy).
+
+The new ideas in v3: project picker so one app hosts many fleets; onboarding via a Lead agent that interviews the user, writes the brief, proposes the team, and files initial tickets; agent-side mid-project proposals (Lead writes `agent-proposal.json`); per-agent wakeup mode (`heartbeat` versus `on-assignment`); per-agent kickoff, goals, soul, pre-compact, and reawaken markdown all editable in-app; programmatic wakeup over pty stdin (no human paste); the bug-protocol gate (agent must consult lessons before working a bug); sentinel-file lesson ingestion (agents log lessons, not the user); xterm-based pane management with light and dark theming; and crash recovery via Claude Code's session resume.
+
+The throughline: every layer of the operating model that worked in v2 is here, lifted out of PrintPepper-specific plumbing and packaged so any project can use it.
 
 ---
 
 ## License
 
 MIT. See [LICENSE](./LICENSE).
-
----
-
-## Status
-
-v0.1 — feature-complete, single-user. Public release pending Apple notarization + Windows signing certs. Compliance UI consumption + Pass B governance features (kill-switch UI, hook-driven exact context %) on the roadmap.

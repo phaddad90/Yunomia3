@@ -1,4 +1,4 @@
-// Bug Lessons — capture + browse, mirrors MC v0.3 BL flow.
+// Bug Lessons - capture + browse, mirrors MC v0.3 BL flow.
 //
 // Capture is triggered:
 //   - Manually via Lessons tab "+ New lesson"
