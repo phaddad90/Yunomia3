@@ -137,6 +137,12 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
                <div class="onb-form">
                  <label>Project name</label>
                  <input id="onb-project-name" type="text" value="${escapeHtml(projectName)}" />
+                 <label>Lead model</label>
+                 <select id="onb-lead-model">
+                   <option value="claude-opus-4-7" selected>Opus 4.7 (best for scoping / design)</option>
+                   <option value="claude-sonnet-4-6">Sonnet 4.6 (balanced)</option>
+                   <option value="claude-haiku-4-5-20251001">Haiku 4.5 (cheapest, fastest)</option>
+                 </select>
                  <button id="onb-spawn-lead" class="btn-primary" type="button">Spawn lead agent</button>
                </div>`}
           <h3 style="margin-top:24px">Brief</h3>
@@ -165,9 +171,10 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
   if (spawnBtn) {
     spawnBtn.addEventListener('click', async () => {
       const name = container.querySelector('#onb-project-name')?.value.trim() || projectLabel(cwd);
+      const leadModel = container.querySelector('#onb-lead-model')?.value || 'claude-opus-4-7';
       await setProjectName(cwd, name);
       const kickoff = FOUNDER_KICKOFF(name, cwd, briefPath);
-      await spawnAgent('LEAD', 'claude-opus-4-7', cwd, { kickoff });
+      await spawnAgent('LEAD', leadModel, cwd, { kickoff });
       await markLeadSpawned(cwd);
       // Re-render
       const fresh = await loadOnboardingForProject(cwd);
