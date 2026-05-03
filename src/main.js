@@ -1037,7 +1037,7 @@ async function refreshResumeBanner() {
       const sid = b.dataset.sid;
       if (!confirm(`Delete session ${sid.slice(0,8)}? Conversation history will be lost permanently.`)) return;
       try {
-        await invoke('delete_session', { args: { cwd, sessionId: sid } });
+        await invoke('delete_session', { args: { cwd, session_id: sid } });
         b.closest('.resume-pill')?.remove();
         // If banner now empty, remove it.
         if (!banner.querySelectorAll('.resume-pill').length) banner.remove();
