@@ -32,7 +32,7 @@ A multi-agent orchestration shell for any project. Open Yunomia, point it at a f
 
 ### macOS (Apple Silicon and Intel)
 
-Grab the latest signed `.dmg` from [Releases](https://github.com/phaddad90/Yunomia3/releases). Drag Yunomia.app into Applications. The app is signed and notarized with Peter's Apple Developer account, so it opens normally on first launch.
+Grab the latest signed `.dmg` from [Releases](https://github.com/phaddad90/Yunomia3/releases). Drag Yunomia.app into Applications. The app is signed and notarized so it opens normally on first launch.
 
 ### Windows
 
@@ -41,6 +41,14 @@ Download the latest `.msi` from [Releases](https://github.com/phaddad90/Yunomia3
 ### Linux
 
 Download the `.AppImage` (run directly) or `.deb` (install with `sudo dpkg -i`) from [Releases](https://github.com/phaddad90/Yunomia3/releases).
+
+### Auto-updates
+
+Yunomia checks for updates on launch (silently, throttled to every 6 hours). When a new version is published, a green banner appears at the top of the app: click **Install & restart** and the new build downloads, replaces the current install, and relaunches. No manual reinstall.
+
+The updater is cryptographically signed; only releases produced by the project's GitHub Actions pipeline are accepted.
+
+You can force a check anytime via Settings → Updates → **Check for updates**.
 
 ---
 

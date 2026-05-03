@@ -610,6 +610,33 @@ body {
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text-hi);
 }
 .btn-secondary:hover { background: var(--pepper-soft); border-color: var(--pepper); color: var(--pepper); }
+button.btn-disabled, button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Update available banner */
+.update-banner {
+  background: #ecfdf5; color: #047857;
+  border-bottom: 1px solid #a7f3d0;
+  padding: 8px 12px; font-size: 13px;
+  display: flex; align-items: center; gap: 12px;
+}
+.update-icon { font-size: 16px; font-weight: 700; }
+.update-when { color: var(--text-low); font-size: 11px; margin-left: 4px; }
+.update-banner button { padding: 4px 12px; font-size: 12px; }
+.update-banner .update-install { margin-left: auto; }
+
+/* Compliance kill-switch banner */
+.killswitch-banner {
+  background: #fee2e2; color: #b91c1c;
+  border-bottom: 2px solid #fca5a5;
+  padding: 8px 14px; font-size: 13px; font-weight: 600;
+  text-align: center;
+}
+
+/* Settings - kill-switch row */
+.kill-toggle-row { display: flex; gap: 8px; align-items: center; }
+.kill-toggle-row input { width: auto; }
+#settings-killswitch-reason { width: 100%; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius); margin-top: 6px; background: var(--surface-2); }
+.settings-hint { color: var(--text-low); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 10px; }
 
 /* Crash recovery / resume banner */
 .resume-banner {

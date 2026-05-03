@@ -183,7 +183,25 @@ pub fn agent_context_estimate(args: ContextEstimateArgs) -> Result<Option<Contex
     }
     let (path, _, bytes) = match newest { Some(x) => x, None => return Ok(None) };
     let session_id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-    let tokens_estimated = bytes / 4;       // rough - replace with hook stats once available
+    // Prefer stats hook output when present.
+    let stats_path = proj_dir.join(format!("{}-stats.json", session_id));
+    if stats_path.exists() {
+        if let Ok(raw) = fs::read_to_string(&stats_path) {
+            #[derive(Deserialize)] struct Stats { tokens_used: u64, tokens_total: u64 }
+            if let Ok(s) = serde_json::from_str::<Stats>(&raw) {
+                let total = if s.tokens_total > 0 { s.tokens_total } else { CONTEXT_WINDOW_TOKENS };
+                let percent = ((s.tokens_used.min(total) * 100) / total) as u32;
+                return Ok(Some(ContextEstimate {
+                    session_id,
+                    bytes,
+                    tokens_estimated: s.tokens_used,
+                    percent,
+                    source: "stats-hook".into(),
+                }));
+            }
+        }
+    }
+    let tokens_estimated = bytes / 4;       // fallback heuristic
     let percent = ((tokens_estimated * 100) / CONTEXT_WINDOW_TOKENS).min(100) as u32;
     Ok(Some(ContextEstimate {
         session_id,

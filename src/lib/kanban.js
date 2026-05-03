@@ -261,6 +261,8 @@ function renderSide(t) {
   $('#k-side-bodyedit').addEventListener('click', () => editBodyInline(t));
   $('#k-side-start').addEventListener('click', () => transition(t.id, 'start'));
   $('#k-side-handoff').addEventListener('click', () => transition(t.id, 'handoff'));
+  // Compliance UI: read eligible_actions and gate the buttons.
+  void applyEligibility(t.id);
   $('#k-side-done').addEventListener('click', async () => {
     if (!confirm(`Mark ${t.human_id} as done?`)) return;
     const res = await transition(t.id, 'done');
@@ -310,6 +312,22 @@ async function patchAndPing(id, fields) {
   } catch (err) {
     alert('Update failed: ' + (err?.message || err));
   }
+}
+
+async function applyEligibility(ticketId) {
+  let e;
+  try { e = await invoke('eligible_actions', { args: { cwd: k.cwd, id: ticketId } }); }
+  catch { return; }
+  const apply = (sel, can, reason) => {
+    const btn = document.querySelector(sel);
+    if (!btn) return;
+    btn.disabled = !can;
+    btn.title = !can && reason ? reason : '';
+    btn.classList.toggle('btn-disabled', !can);
+  };
+  apply('#k-side-start',   e.can_start,   e.start_reason);
+  apply('#k-side-handoff', e.can_handoff, e.handoff_reason);
+  apply('#k-side-done',    e.can_done,    e.done_reason);
 }
 
 async function transition(id, action) {

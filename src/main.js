@@ -18,6 +18,8 @@ import { renderLessonsView, bindLessonModal } from './lib/lessons.js';
 import { renderActivityView, renderInboxView, renderReportsView, renderAgentsView, unprocessedInboxCount } from './lib/views.js';
 import { writeToAgent } from './lib/mc-bridge.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { bootCheckForUpdates } from './lib/updater.js';
+import { getVersion } from '@tauri-apps/api/app';
 
 const AGENT_MODELS_DEFAULT = {
   LEAD:'claude-opus-4-7',
@@ -943,13 +945,72 @@ async function openSettings() {
     val.textContent = String(state.maxConcurrent);
     localStorage.setItem('yunomia.maxConcurrent', String(state.maxConcurrent));
   };
-  // Per-agent model defaults moved to per-project Agents tab.
+  // App version + Check-for-updates button
+  try {
+    const v = await getVersion();
+    document.getElementById('settings-version').textContent = `Yunomia v${v}`;
+  } catch { /* ignore */ }
+  const upBtn = document.getElementById('settings-check-updates');
+  if (upBtn && !upBtn.dataset.bound) {
+    upBtn.dataset.bound = '1';
+    upBtn.addEventListener('click', async () => {
+      upBtn.disabled = true;
+      upBtn.textContent = 'Checking...';
+      const update = await bootCheckForUpdates({ silent: false });
+      upBtn.disabled = false;
+      upBtn.textContent = 'Check for updates';
+      if (!update) alert('You are on the latest version.');
+    });
+  }
+  // Compliance kill-switch (project-scoped)
+  const killToggle = document.getElementById('settings-killswitch');
+  const killReason = document.getElementById('settings-killswitch-reason');
+  if (killToggle && state.selectedProject) {
+    try {
+      const ks = await invoke('kill_switch_get', { args: { cwd: state.selectedProject } });
+      killToggle.checked = !!ks?.disabled;
+      killReason.value = ks?.reason || '';
+    } catch { /* ignore */ }
+    killToggle.onchange = async () => {
+      try {
+        await invoke('kill_switch_set', { args: {
+          cwd: state.selectedProject,
+          disabled: killToggle.checked,
+          by: 'PETER',
+          reason: killReason.value || null,
+        }});
+      } catch (err) { alert('Failed: ' + (err?.message || err)); }
+    };
+  }
   modal.classList.remove('hidden');
 }
 bindSettings();
 
 // Restore maxConcurrent on boot.
 state.maxConcurrent = parseInt(localStorage.getItem('yunomia.maxConcurrent') || '3', 10);
+
+// Auto-update check (silent, throttled to once per 6 hours).
+setTimeout(() => { void bootCheckForUpdates({ silent: true }); }, 4000);
+
+// Kill-switch banner — polls every 30 s when a project is active.
+async function killSwitchTick() {
+  const cwd = state.selectedProject;
+  const existing = document.querySelector('.killswitch-banner');
+  if (!cwd) { if (existing) existing.remove(); return; }
+  let ks = null;
+  try { ks = await invoke('kill_switch_get', { args: { cwd } }); } catch { return; }
+  if (!ks?.disabled) { if (existing) existing.remove(); return; }
+  if (existing) return;
+  const banner = document.createElement('div');
+  banner.className = 'killswitch-banner';
+  const reason = ks.reason ? ` - ${ks.reason}` : '';
+  const by = ks.disabled_by ? ks.disabled_by : 'admin';
+  const when = ks.disabled_at ? new Date(ks.disabled_at).toLocaleString() : '';
+  banner.innerHTML = `<span>⚠ Compliance disabled by ${escapeHtml(by)} ${escapeHtml(when ? `(${when})` : '')}${escapeHtml(reason)}</span>`;
+  document.body.insertBefore(banner, document.body.firstChild);
+}
+setInterval(killSwitchTick, 30_000);
+setTimeout(killSwitchTick, 2000);
 
 // Keyboard shortcuts - match IDE muscle memory.
 //   Cmd+T  = open spawn-agent modal (when active phase)

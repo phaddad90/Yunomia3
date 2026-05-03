@@ -9,6 +9,8 @@
     "core:webview:default",
     "core:window:default",
     "shell:default",
-    "dialog:default"
+    "dialog:default",
+    "updater:default",
+    "process:default"
   ]
 }

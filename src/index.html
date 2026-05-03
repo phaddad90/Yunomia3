@@ -202,12 +202,29 @@
         </div>
       </section>
       <section class="settings-section">
+        <h4>Updates</h4>
+        <div class="settings-row">
+          <span id="settings-version">Yunomia v-</span>
+          <button id="settings-check-updates" type="button" class="btn-secondary">Check for updates</button>
+        </div>
+      </section>
+      <section class="settings-section">
+        <h4>Compliance kill-switch (project-scoped)</h4>
+        <div class="settings-row">
+          <label class="kill-toggle-row">
+            <input id="settings-killswitch" type="checkbox" />
+            <span>Disable all compliance rules for this project</span>
+          </label>
+        </div>
+        <input id="settings-killswitch-reason" type="text" placeholder="Reason (optional)" />
+      </section>
+      <section class="settings-section">
         <h4>Keyboard shortcuts</h4>
         <table class="settings-shortcuts">
-          <tr><td><kbd>⌘T</kbd></td><td>Spawn agent (active phase)</td></tr>
-          <tr><td><kbd>⌘W</kbd></td><td>Close current tab</td></tr>
-          <tr><td><kbd>⌘1</kbd>–<kbd>⌘9</kbd></td><td>Switch to tab N</td></tr>
-          <tr><td><kbd>⌘R</kbd></td><td>Reload Yunomia</td></tr>
+          <tr><td><kbd>⌘T</kbd> / <kbd>Ctrl+T</kbd></td><td>Spawn agent (active phase)</td></tr>
+          <tr><td><kbd>⌘W</kbd> / <kbd>Ctrl+W</kbd></td><td>Close current tab</td></tr>
+          <tr><td><kbd>⌘1</kbd>-<kbd>⌘9</kbd> / <kbd>Ctrl+1</kbd>-<kbd>Ctrl+9</kbd></td><td>Switch to tab N</td></tr>
+          <tr><td><kbd>⌘R</kbd> / <kbd>Ctrl+R</kbd></td><td>Reload Yunomia</td></tr>
         </table>
       </section>
       <div class="modal-actions">
