@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Yunomia</title>
+  <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img class="logo" src="./logo.svg" alt="Yunomia" width="22" height="22" />
+      <span class="brand-name">Yunomia</span>
+    </div>
+    <nav class="tabs" id="pane-tabs">
+      <button class="tab active" data-pane="dashboard">📊 Dashboard</button>
+    </nav>
+    <div class="actions">
+      <label class="project-picker-wrap">
+        <span>Project</span>
+        <select id="project-picker" aria-label="Project root"></select>
+      </label>
+      <button id="spawn-agent" class="btn-primary" type="button" hidden>+ Spawn agent</button>
+      <button id="settings-btn" class="btn-ghost" type="button" title="Settings">⚙</button>
+    </div>
+  </header>
+  <main id="panes">
+    <section class="pane active" data-pane="dashboard">
+      <div id="onboarding-root" class="onboarding-root" hidden></div>
+      <div id="dashboard-active" class="dashboard-layout">
+        <aside id="agent-rail" class="agent-rail"></aside>
+        <div class="resizer" data-resize="left"></div>
+        <div class="kanban-col">
+          <details id="brief-panel" class="brief-panel">
+            <summary>📋 Project brief — <span id="brief-name"></span></summary>
+            <pre id="brief-content"></pre>
+            <button id="brief-reopen" class="btn-ghost" type="button">Re-open onboarding</button>
+          </details>
+          <nav class="subtabs" id="subtabs">
+            <button class="subtab active" data-sub="kanban">Kanban</button>
+            <button class="subtab" data-sub="activity">Activity</button>
+            <button class="subtab" data-sub="inbox">Inbox <span class="subtab-badge" id="sub-badge-inbox" hidden>0</span></button>
+            <button class="subtab" data-sub="lessons">Lessons</button>
+            <button class="subtab" data-sub="reports">Reports</button>
+            <button class="subtab" data-sub="agents">Agents</button>
+          </nav>
+          <div id="kanban-filters" class="kanban-filters">
+            <input id="filter-q" type="text" placeholder="Search title / body…" />
+            <select id="filter-assignee">
+              <option value="">All assignees</option>
+            </select>
+            <select id="filter-type">
+              <option value="">All types</option>
+              <option value="bug">bug</option>
+              <option value="feature">feature</option>
+              <option value="doc">doc</option>
+              <option value="ops">ops</option>
+              <option value="migration">migration</option>
+              <option value="gate">gate</option>
+            </select>
+            <select id="filter-due">
+              <option value="">All</option>
+              <option value="overdue">Overdue</option>
+              <option value="today">Due today</option>
+              <option value="week">Due this week</option>
+              <option value="scheduled">Any scheduled</option>
+            </select>
+          </div>
+          <div id="kanban-root" class="kanban-root subview" data-view="kanban"></div>
+          <div id="activity-root" class="subview" data-view="activity" hidden></div>
+          <div id="inbox-root" class="subview" data-view="inbox" hidden></div>
+          <div id="lessons-root" class="subview" data-view="lessons" hidden></div>
+          <div id="reports-root" class="subview" data-view="reports" hidden></div>
+          <div id="agents-root" class="subview" data-view="agents" hidden></div>
+        </div>
+        <div class="resizer" data-resize="right"></div>
+        <aside class="rail-right">
+          <h3>New ticket</h3>
+          <form id="new-ticket-form" class="new-ticket-form">
+            <input id="nt-title" type="text" placeholder="Title (optional — auto from first line)" maxlength="180" />
+            <textarea id="nt-body" rows="5" placeholder="What needs doing?" required></textarea>
+            <div class="nt-row">
+              <select id="nt-type" title="Type">
+                <option value="ops" selected>Ops</option>
+                <option value="bug">Bug</option>
+                <option value="feature">Feature</option>
+                <option value="doc">Doc</option>
+                <option value="migration">Migration</option>
+                <option value="gate">Gate</option>
+              </select>
+              <select id="nt-audience" title="Audience">
+                <option value="admin" selected>Admin</option>
+                <option value="app">App</option>
+              </select>
+              <select id="nt-assignee" title="Assignee">
+                <option value="">— unassigned</option>
+                <option value="CEO">🎯 CEO</option>
+                <option value="SA">🟧 SA</option>
+                <option value="AD">🟦 AD</option>
+                <option value="WA">🟪 WA</option>
+                <option value="DA">🟨 DA</option>
+                <option value="QA">🟥 QA</option>
+                <option value="WD">🌐 WD</option>
+                <option value="TA">🛠 TA</option>
+                <option value="PETER">🎩 PETER</option>
+              </select>
+            </div>
+            <button type="submit" class="btn-primary">Create</button>
+          </form>
+        </aside>
+      </div>
+      <aside id="k-side" class="k-side hidden"></aside>
+    </section>
+  </main>
+
+  <!-- Agent proposal modal -->
+  <div id="proposal-modal" class="modal hidden">
+    <div class="modal-card proposal-card">
+      <header><h3>Lead proposes a new agent</h3></header>
+      <div class="proposal-body">
+        <div class="proposal-summary"></div>
+        <details>
+          <summary>Soul</summary>
+          <pre class="proposal-pre" data-field="soul_md"></pre>
+        </details>
+        <details>
+          <summary>Kickoff (sent on spawn)</summary>
+          <pre class="proposal-pre" data-field="kickoff_md"></pre>
+        </details>
+        <details>
+          <summary>Pre-compact instructions</summary>
+          <pre class="proposal-pre" data-field="pre_compact_md"></pre>
+        </details>
+        <details>
+          <summary>Reawaken prompt</summary>
+          <pre class="proposal-pre" data-field="reawaken_md"></pre>
+        </details>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="proposal-reject" class="btn-ghost">Reject</button>
+        <button type="button" id="proposal-approve" class="btn-primary">Approve & spawn</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lesson capture modal -->
+  <div id="lesson-modal" class="modal hidden">
+    <div class="modal-card lesson-card">
+      <header><h3 id="lesson-modal-title">Capture Bug Lesson</h3></header>
+      <form id="lesson-form">
+        <label>Symptom <span class="hint">one sentence</span></label>
+        <input id="lesson-symptom" type="text" required maxlength="280" />
+        <label>Severity</label>
+        <select id="lesson-severity">
+          <option value="medium" selected>medium</option>
+          <option value="low">low</option>
+          <option value="high">high</option>
+          <option value="critical">critical</option>
+        </select>
+        <label>Linked ticket</label>
+        <input id="lesson-ticket" type="text" placeholder="(auto-filled)" />
+        <label>Root cause</label>
+        <textarea id="lesson-root" rows="3"></textarea>
+        <label>Fix</label>
+        <textarea id="lesson-fix" rows="3"></textarea>
+        <label>Files changed <span class="hint">comma-separated</span></label>
+        <textarea id="lesson-files" rows="2"></textarea>
+        <label>How to recognise this pattern next time</label>
+        <textarea id="lesson-recognise" rows="2"></textarea>
+        <label>Prevent action</label>
+        <textarea id="lesson-prevent" rows="2"></textarea>
+        <label>Tags <span class="hint">comma-separated</span></label>
+        <input id="lesson-tags" type="text" />
+        <div class="modal-actions">
+          <button type="button" id="lesson-cancel" class="btn-ghost">Cancel</button>
+          <button type="submit" class="btn-primary">Capture</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-card settings-card">
+      <header><h3>Settings</h3></header>
+      <section class="settings-section">
+        <h4>Theme</h4>
+        <div class="theme-toggle" id="theme-toggle">
+          <button type="button" data-theme="light" title="Light"><span class="theme-icon">☀</span><span class="theme-label">Light</span></button>
+          <button type="button" data-theme="dark"  title="Dark"><span class="theme-icon">☾</span><span class="theme-label">Dark</span></button>
+          <button type="button" data-theme="auto"  title="Follow system"><span class="theme-icon">◐</span><span class="theme-label">Auto</span></button>
+        </div>
+      </section>
+      <section class="settings-section">
+        <h4>Concurrency</h4>
+        <div class="settings-row">
+          <label>Max concurrent agents
+            <input id="settings-max-concurrent" type="range" min="1" max="50" />
+            <span id="settings-max-concurrent-val"></span>
+          </label>
+        </div>
+      </section>
+      <section class="settings-section">
+        <h4>Keyboard shortcuts</h4>
+        <table class="settings-shortcuts">
+          <tr><td><kbd>⌘T</kbd></td><td>Spawn agent (active phase)</td></tr>
+          <tr><td><kbd>⌘W</kbd></td><td>Close current tab</td></tr>
+          <tr><td><kbd>⌘1</kbd>–<kbd>⌘9</kbd></td><td>Switch to tab N</td></tr>
+          <tr><td><kbd>⌘R</kbd></td><td>Reload Yunomia</td></tr>
+        </table>
+      </section>
+      <div class="modal-actions">
+        <button type="button" id="settings-close" class="btn-primary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add project modal -->
+  <div id="project-modal" class="modal hidden">
+    <div class="modal-card">
+      <header><h3>Add project</h3></header>
+      <form id="project-form">
+        <label>Project name <span style="font-weight:400;color:var(--text-low);text-transform:none;letter-spacing:0">(optional — derived from path)</span></label>
+        <input id="proj-name" type="text" placeholder="e.g. ERPrintable" />
+        <label>Absolute path</label>
+        <div class="proj-path-row">
+          <input id="proj-path" type="text" placeholder="/Users/peter/Desktop/MyProject" required />
+          <button type="button" id="proj-browse" class="btn-ghost">Browse…</button>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="proj-cancel" class="btn-ghost">Cancel</button>
+          <button type="submit" class="btn-primary">Add</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Spawn modal -->
+  <div id="spawn-modal" class="modal hidden">
+    <div class="modal-card">
+      <header><h3>Spawn agent</h3></header>
+      <form id="spawn-form">
+        <label>Agent code</label>
+        <select id="spawn-code" required>
+          <option value="LEAD">🧭 LEAD</option>
+          <option value="CEO">🎯 CEO</option>
+          <option value="SA">🟧 SA</option>
+          <option value="AD">🟦 AD</option>
+          <option value="WA">🟪 WA</option>
+          <option value="DA">🟨 DA</option>
+          <option value="QA">🟥 QA</option>
+          <option value="WD">🌐 WD</option>
+          <option value="TA">🛠 TA</option>
+        </select>
+        <label>Model</label>
+        <select id="spawn-model">
+          <option value="claude-sonnet-4-6" selected>Sonnet 4.6 (default)</option>
+          <option value="claude-opus-4-7">Opus 4.7</option>
+          <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+        </select>
+        <label>Working directory</label>
+        <input id="spawn-cwd" type="text" placeholder="/Users/peter/Desktop/Project Eunomia" />
+        <label class="temp-row"><input id="spawn-temp" type="checkbox" /> <span>Temp agent (auto-dispose after first task)</span></label>
+        <div class="modal-actions">
+          <button type="button" id="spawn-cancel" class="btn-ghost">Cancel</button>
+          <button type="submit" class="btn-primary">Spawn</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

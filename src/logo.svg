@@ -1,0 +1,40 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <defs>
+    <linearGradient id="ybg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#3a1f10"/>
+      <stop offset="35%"  stop-color="#1a1a1a"/>
+      <stop offset="100%" stop-color="#050507"/>
+    </linearGradient>
+    <radialGradient id="yglow" cx="50%" cy="40%" r="60%">
+      <stop offset="0%"   stop-color="#ff5722" stop-opacity="0.32"/>
+      <stop offset="55%"  stop-color="#ff5722" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#ff5722" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ystroke" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%"   stop-color="#ff8a5b"/>
+      <stop offset="40%"  stop-color="#ff5722"/>
+      <stop offset="100%" stop-color="#a82d05"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Backdrop -->
+  <rect width="64" height="64" rx="14" ry="14" fill="url(#ybg)"/>
+  <rect width="64" height="64" rx="14" ry="14" fill="url(#yglow)"/>
+
+  <!-- Y as a single filled glyph: short upper arms (V), long thick leg (|).
+       Using a filled path so the leg can be visibly heavier than the arms,
+       which is what makes it read as a Y instead of a V at all sizes. -->
+  <g fill="url(#ystroke)">
+    <!-- Left arm -->
+    <path d="M 14 14 L 21 14 L 33 30 L 33 36 L 28 36 Z"/>
+    <!-- Right arm -->
+    <path d="M 50 14 L 43 14 L 31 30 L 31 36 L 36 36 Z"/>
+    <!-- Long thick leg -->
+    <rect x="28" y="30" width="8" height="22" rx="2"/>
+    <!-- Base serif (small bar) for typographic clarity -->
+    <rect x="24" y="50" width="16" height="4" rx="1.5"/>
+  </g>
+
+  <!-- Pulse node where arms meet the leg -->
+  <circle cx="32" cy="30" r="3" fill="#ffd2bc"/>
+</svg>
