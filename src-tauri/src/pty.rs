@@ -7,7 +7,7 @@
 // frontend via Tauri events on the channel `pty://output/<id>`.
 
 use crate::store;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
