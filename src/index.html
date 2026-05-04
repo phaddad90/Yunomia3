@@ -239,10 +239,10 @@
       <header><h3>Add project</h3></header>
       <form id="project-form">
         <label>Project name <span style="font-weight:400;color:var(--text-low);text-transform:none;letter-spacing:0">(optional - derived from path)</span></label>
-        <input id="proj-name" type="text" placeholder="e.g. ERPrintable" />
+        <input id="proj-name" type="text" placeholder="e.g. AcmeWidget" />
         <label>Absolute path</label>
         <div class="proj-path-row">
-          <input id="proj-path" type="text" placeholder="/Users/peter/Desktop/MyProject" required />
+          <input id="proj-path" type="text" placeholder="/Users/<you>/Projects/my-project" required />
           <button type="button" id="proj-browse" class="btn-ghost">Browse…</button>
         </div>
         <div class="modal-actions">
@@ -277,7 +277,7 @@
           <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
         </select>
         <label>Working directory</label>
-        <input id="spawn-cwd" type="text" placeholder="/Users/peter/Desktop/Project Eunomia" />
+        <input id="spawn-cwd" type="text" placeholder="/Users/<you>/Projects/my-project" />
         <label class="temp-row"><input id="spawn-temp" type="checkbox" /> <span>Temp agent (auto-dispose after first task)</span></label>
         <div class="modal-actions">
           <button type="button" id="spawn-cancel" class="btn-ghost">Cancel</button>
