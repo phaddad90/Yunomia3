@@ -391,6 +391,18 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     const ent = state.ptys.get(key);
     if (ent) ent.lastWriteAt = Date.now();
   });
+  // Shift+Enter must produce a newline inside claude code's prompt buffer
+  // instead of submitting. iTerm2's convention is \x1b\r (Option+Return);
+  // claude code's Ink TUI accepts that sequence. Plain Shift+Enter from
+  // xterm sends \r, indistinguishable from Enter, so we intercept here.
+  term.attachCustomKeyEventHandler((ev) => {
+    if (ev.type !== 'keydown') return true;
+    if (ev.key === 'Enter' && ev.shiftKey) {
+      invoke('pty_write', { args: { id: key, data: '\x1b\r' } }).catch(() => {});
+      return false;
+    }
+    return true;
+  });
   // TIOCSWINSZ on resize.
   term.onResize(({ cols, rows }) => {
     invoke('pty_resize', { args: { id: key, cols, rows } }).catch((e) => console.warn('pty_resize', e));
