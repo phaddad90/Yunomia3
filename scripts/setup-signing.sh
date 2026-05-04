@@ -62,7 +62,9 @@ fi
 echo
 echo "==> Pushing updater private key to GitHub secrets"
 gh secret set TAURI_SIGNING_PRIVATE_KEY --repo "$REPO" --body "$(cat $UPDATER_PRIV)"
-gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --repo "$REPO" --body ""
+# gh refuses empty --body; pipe a literal space so the secret exists with no
+# meaningful content. Tauri treats unset / empty / whitespace as no-password.
+echo " " | gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --repo "$REPO"
 
 echo
 echo "==> Apple Developer signing"
