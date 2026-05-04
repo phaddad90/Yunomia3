@@ -362,6 +362,14 @@ async function spawnAgent(code, model, cwd, opts = {}) {
 
   setActivePane(key);
 
+  // Wait for layout to settle so termWrap has real clientWidth/clientHeight,
+  // then fit() so term.cols/rows reflect the actual pane size BEFORE we
+  // spawn the pty. If we spawn at default 80x24 and resize after, claude's
+  // TUI renders its chrome at the wrong width and leaves stale box-drawing
+  // characters until the next keystroke triggers a redraw.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  try { fit.fit(); } catch {}
+
   // Stream stdout from the pty into xterm.
   const unlistenOut = await listen(`pty://output/${key}`, (evt) => {
     term.write(evt.payload);
