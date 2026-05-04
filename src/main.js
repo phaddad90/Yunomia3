@@ -956,10 +956,12 @@ async function openSettings() {
     upBtn.addEventListener('click', async () => {
       upBtn.disabled = true;
       upBtn.textContent = 'Checking...';
-      const update = await bootCheckForUpdates({ silent: false });
+      const res = await bootCheckForUpdates({ silent: false });
       upBtn.disabled = false;
       upBtn.textContent = 'Check for updates';
-      if (!update) alert('You are on the latest version.');
+      if (res.kind === 'error') alert('Update check failed: ' + res.error);
+      else if (res.kind === 'none') alert('You are on the latest version.');
+      // 'available' → the green banner is already showing.
     });
   }
   // Compliance kill-switch (project-scoped)

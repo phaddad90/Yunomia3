@@ -14,23 +14,22 @@ import { relaunch } from '@tauri-apps/plugin-process';
 const LS_LAST_CHECK = 'yunomia.lastUpdateCheck';
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;   // every 6 hours
 
+// Returns { kind: 'available' | 'none' | 'error', update?, error? }
 export async function bootCheckForUpdates({ silent = true } = {}) {
-  // Throttle background checks; manual checks always run.
   if (silent) {
     const last = parseInt(localStorage.getItem(LS_LAST_CHECK) || '0', 10);
-    if (Date.now() - last < CHECK_INTERVAL_MS) return null;
+    if (Date.now() - last < CHECK_INTERVAL_MS) return { kind: 'none' };
     localStorage.setItem(LS_LAST_CHECK, String(Date.now()));
   }
   let update;
   try {
     update = await check();
   } catch (err) {
-    if (!silent) alert('Update check failed: ' + (err?.message || err));
-    return null;
+    return { kind: 'error', error: String(err?.message || err) };
   }
-  if (!update) return null;
+  if (!update) return { kind: 'none' };
   showUpdateBanner(update);
-  return update;
+  return { kind: 'available', update };
 }
 
 function showUpdateBanner(update) {
