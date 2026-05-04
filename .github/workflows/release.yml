@@ -1,8 +1,12 @@
 name: release
 
-# Triggered by pushing a tag like v0.1.0. Builds Yunomia for macOS (Apple
-# Silicon + Intel), Windows x64, and Linux x64; uploads the bundles to a
-# GitHub Release for the tag.
+# Triggered by pushing a tag like v0.1.0. Two phases:
+#   1. `build` (matrix) - one runner per platform: bundles, signs, notarizes,
+#      then uploads its artifacts to a per-platform Actions artifact.
+#   2. `publish` (single runner) - downloads every Actions artifact, builds
+#      latest.json from the .sig files, then creates the GitHub Release with
+#      every asset in one shot. No parallel writes to the same release means
+#      no `Error updating policy` race like v0.1.5.
 #
 # Code signing notes:
 #  - macOS: set the secrets APPLE_CERTIFICATE (base64), APPLE_CERTIFICATE_PASSWORD,
@@ -28,12 +32,20 @@ jobs:
         include:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
+            artifact_name: 'macos-aarch64'
+            arch_suffix: 'aarch64'
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
+            artifact_name: 'macos-x86_64'
+            arch_suffix: 'x64'
           - platform: 'ubuntu-22.04'
             args: ''
+            artifact_name: 'linux-x86_64'
+            arch_suffix: ''
           - platform: 'windows-latest'
             args: ''
+            artifact_name: 'windows-x86_64'
+            arch_suffix: ''
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -76,23 +88,65 @@ jobs:
           rm cert.p12
 
       - name: Build (Tauri)
+        id: tauri
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Updater manifest signing - Tauri uses minisign-style keys.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         uses: tauri-apps/tauri-action@v0
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Yunomia ${{ github.ref_name }}'
-          releaseBody: |
-            See [README](https://github.com/phaddad90/Yunomia3/blob/main/README.md) for install instructions.
-            In-app update users will be prompted automatically on next launch.
-          releaseDraft: true
-          prerelease: false
-          updaterJsonPreferNsis: true
+          # No tagName - skip release upload entirely so we don't race with
+          # the other matrix jobs. The publish job collects artifacts and
+          # creates the release in one shot.
           args: ${{ matrix.args }}
+
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          python3 .github/scripts/stage-artifacts.py \
+            '${{ steps.tauri.outputs.artifactPaths }}' \
+            '${{ matrix.arch_suffix }}' \
+            staging
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.artifact_name }}
+          path: staging/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: bundle-*
+          merge-multiple: true
+
+      - name: List staged assets
+        run: ls -la dist
+
+      - name: Build latest.json
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 .github/scripts/build-latest-json.py dist > dist/latest.json
+          cat dist/latest.json
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Yunomia ${GITHUB_REF_NAME}" \
+            --notes "See [README](https://github.com/${GITHUB_REPOSITORY}/blob/main/README.md) for install instructions.
+          In-app update users will be prompted automatically on next launch." \
+            dist/*
