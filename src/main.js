@@ -991,6 +991,15 @@ bindSettings();
 // Restore maxConcurrent on boot.
 state.maxConcurrent = parseInt(localStorage.getItem('yunomia.maxConcurrent') || '3', 10);
 
+// Surface any uncaught error / promise rejection so we don't lose them
+// silently in release builds where DevTools isn't always open.
+window.addEventListener('error', (e) => {
+  console.error('window.error', e.error || e.message);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('unhandledrejection', e.reason);
+});
+
 // Auto-update check (silent, throttled to once per 6 hours).
 setTimeout(() => { void bootCheckForUpdates({ silent: true }); }, 4000);
 

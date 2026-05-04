@@ -170,15 +170,19 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
   const spawnBtn = container.querySelector('#onb-spawn-lead');
   if (spawnBtn) {
     spawnBtn.addEventListener('click', async () => {
-      const name = container.querySelector('#onb-project-name')?.value.trim() || projectLabel(cwd);
-      const leadModel = container.querySelector('#onb-lead-model')?.value || 'claude-opus-4-7';
-      await setProjectName(cwd, name);
-      const kickoff = FOUNDER_KICKOFF(name, cwd, briefPath);
-      await spawnAgent('LEAD', leadModel, cwd, { kickoff });
-      await markLeadSpawned(cwd);
-      // Re-render
-      const fresh = await loadOnboardingForProject(cwd);
-      renderOnboardingView({ container, cwd, state: fresh.state, brief: fresh.brief, spawnAgent, onApproved, leadRunning: true });
+      try {
+        const name = container.querySelector('#onb-project-name')?.value.trim() || projectLabel(cwd);
+        const leadModel = container.querySelector('#onb-lead-model')?.value || 'claude-opus-4-7';
+        await setProjectName(cwd, name);
+        const kickoff = FOUNDER_KICKOFF(name, cwd, briefPath);
+        await spawnAgent('LEAD', leadModel, cwd, { kickoff });
+        await markLeadSpawned(cwd);
+        const fresh = await loadOnboardingForProject(cwd);
+        renderOnboardingView({ container, cwd, state: fresh.state, brief: fresh.brief, spawnAgent, onApproved, leadRunning: true });
+      } catch (err) {
+        console.error('spawn lead failed', err);
+        alert('Spawn lead agent failed:\n' + (err?.message || err) + '\n\nIf you see this, please screenshot and share with the maintainer.');
+      }
     });
   }
   const refreshBtn = container.querySelector('#onb-refresh-brief');
