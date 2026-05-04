@@ -169,7 +169,7 @@ function setActivePane(id) {
     const f = () => { try { ent.fit.fit(); } catch {} };
     requestAnimationFrame(() => requestAnimationFrame(f));
     setTimeout(f, 100);
-    setTimeout(f, 300);
+    setTimeout(() => { f(); try { ent.term.focus(); } catch {} }, 300);
   }
 }
 
@@ -346,6 +346,10 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   // collapses) re-fits the terminal to fill the pane.
   const ro = new ResizeObserver(() => { try { fit.fit(); } catch {} });
   ro.observe(termWrap);
+  // Click anywhere in the terminal area focuses xterm's hidden textarea so
+  // keystrokes actually reach the pty. Without this the user types and
+  // nothing happens because focus stays on the parent dashboard chrome.
+  termWrap.addEventListener('mousedown', () => { try { term.focus(); } catch {} });
   // Mouse-wheel → scroll the terminal's scrollback. xterm normally hooks
   // wheel itself but the flex wrapper can swallow events; explicit listener
   // makes scrollback reliably reachable.
@@ -405,6 +409,8 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     await invoke('pty_spawn', {
       args: { id: key, command: 'claude', args, cwd, env: null, cols: term.cols, rows: term.rows },
     });
+    // Hand keyboard focus to the terminal so the user can type immediately.
+    setTimeout(() => { try { term.focus(); } catch {} }, 100);
   } catch (e) {
     // Surface the error inside the xterm pane so it's not a silent black box.
     const msg = String(e?.message || e);
