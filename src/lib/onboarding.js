@@ -6,11 +6,11 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-const FOUNDER_KICKOFF = (projectName, projectPath, briefPath) => `\
+const FOUNDER_KICKOFF = (projectName, cwd, briefPath) => `\
 You are the LEAD agent for a brand-new Yunomia project.
 
 Project: ${projectName}
-Path: ${projectPath}
+Path: ${cwd}
 Brief file: ${briefPath}
 
 Right now there is no brief, no tickets, no other agents. Your job is the
