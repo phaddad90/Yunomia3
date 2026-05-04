@@ -612,6 +612,19 @@ body {
 .btn-secondary:hover { background: var(--pepper-soft); border-color: var(--pepper); color: var(--pepper); }
 button.btn-disabled, button:disabled { opacity: 0.45; cursor: not-allowed; }
 
+/* Claude-missing install modal */
+.claude-card { min-width: 540px; max-width: 640px; }
+.claude-body p { font-size: 13px; line-height: 1.5; color: var(--text-mid); margin: 0 0 12px; }
+.claude-body h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-mid); margin: 18px 0 8px; }
+.claude-steps { padding-left: 22px; margin: 0; }
+.claude-steps li { font-size: 13px; line-height: 1.6; margin-bottom: 8px; color: var(--text-hi); }
+.claude-steps a { color: var(--pepper); text-decoration: none; }
+.claude-steps a:hover { text-decoration: underline; }
+.claude-steps code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--pepper); border: 1px solid var(--border); }
+.claude-tip { margin-top: 6px; padding: 8px 10px; background: var(--surface-2); border-left: 3px solid var(--pepper); border-radius: 4px; font-size: 12px; color: var(--text-mid); }
+.claude-tip code { display: block; margin-top: 4px; padding: 6px 8px; background: var(--surface); border-radius: 4px; user-select: all; font-size: 11px; color: var(--text-hi); }
+.claude-note { font-size: 11px; color: var(--text-low); font-style: italic; margin-top: 12px; }
+
 /* Update available banner */
 .update-banner {
   background: #ecfdf5; color: #047857;

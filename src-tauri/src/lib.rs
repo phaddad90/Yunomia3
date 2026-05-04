@@ -25,6 +25,7 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             pty::pty_list,
+            pty::claude_status,
             store::models_get,
             store::models_set,
             store::enumerate_sessions,

@@ -13,9 +13,58 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 use tauri::{Emitter, State};
+
+// Resolve `claude` (or any other binary installed via npm/brew/bun/volta) when
+// the .app is launched from Finder. macOS gives Finder-launched apps a minimal
+// PATH; the user's shell PATH (~/.zshrc etc.) is not applied. Strategy:
+//   1. Absolute path? Trust it.
+//   2. Search common install locations.
+//   3. Ask the user's login shell via `<shell> -lc 'which <cmd>'`.
+//   4. Fall through with the bare name (lets portable-pty try its own PATH).
+pub fn resolve_command_path(command: &str) -> String {
+    if command.starts_with('/') { return command.to_string(); }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let candidates: Vec<PathBuf> = vec![
+        PathBuf::from("/usr/local/bin").join(command),
+        PathBuf::from("/opt/homebrew/bin").join(command),
+        PathBuf::from(&home).join(".npm-global/bin").join(command),
+        PathBuf::from(&home).join(".local/bin").join(command),
+        PathBuf::from(&home).join(".bun/bin").join(command),
+        PathBuf::from(&home).join("Library/pnpm").join(command),
+        PathBuf::from(&home).join(".volta/bin").join(command),
+        PathBuf::from(&home).join(".cargo/bin").join(command),
+    ];
+    for p in &candidates {
+        if p.exists() { return p.to_string_lossy().into_owned(); }
+    }
+    if let Ok(shell) = std::env::var("SHELL") {
+        if let Ok(out) = std::process::Command::new(&shell)
+            .args(["-lc", &format!("which {}", command)]).output()
+        {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !s.is_empty() && PathBuf::from(&s).exists() {
+                    return s;
+                }
+            }
+        }
+    }
+    command.to_string()
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ClaudeStatus { pub found: bool, pub path: String }
+
+#[tauri::command]
+pub fn claude_status() -> ClaudeStatus {
+    let path = resolve_command_path("claude");
+    let found = path.starts_with('/') && std::path::Path::new(&path).exists();
+    ClaudeStatus { found, path }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SpawnArgs {
@@ -83,7 +132,8 @@ fn spawn_inner(
         pixel_height: 0,
     })?;
 
-    let mut cmd = CommandBuilder::new(&args.command);
+    let resolved = resolve_command_path(&args.command);
+    let mut cmd = CommandBuilder::new(&resolved);
     for a in &args.args {
         cmd.arg(a);
     }

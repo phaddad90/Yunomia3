@@ -992,6 +992,27 @@ state.maxConcurrent = parseInt(localStorage.getItem('yunomia.maxConcurrent') || 
 // Auto-update check (silent, throttled to once per 6 hours).
 setTimeout(() => { void bootCheckForUpdates({ silent: true }); }, 4000);
 
+// Claude Code presence gate — first thing on launch.
+async function checkClaudeInstalled() {
+  let status = null;
+  try { status = await invoke('claude_status'); } catch { return; }
+  const modal = document.getElementById('claude-missing-modal');
+  if (!modal) return;
+  if (status?.found) {
+    modal.classList.add('hidden');
+  } else {
+    modal.classList.remove('hidden');
+  }
+}
+function bindClaudeMissingModal() {
+  document.getElementById('claude-recheck')?.addEventListener('click', () => checkClaudeInstalled());
+  document.getElementById('claude-dismiss')?.addEventListener('click', () => {
+    document.getElementById('claude-missing-modal').classList.add('hidden');
+  });
+}
+bindClaudeMissingModal();
+void checkClaudeInstalled();
+
 // Kill-switch banner — polls every 30 s when a project is active.
 async function killSwitchTick() {
   const cwd = state.selectedProject;

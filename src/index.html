@@ -180,6 +180,36 @@
     </div>
   </div>
 
+  <!-- Claude Code installer modal (first-run gate) -->
+  <div id="claude-missing-modal" class="modal hidden">
+    <div class="modal-card claude-card">
+      <header><h3>Claude Code not detected</h3></header>
+      <div class="claude-body">
+        <p><b>Yunomia needs the Claude Code CLI.</b> It runs each agent as a real Claude Code session, so it can't operate without it.</p>
+        <h4>Install Claude Code (one-time, ~2 min)</h4>
+        <ol class="claude-steps">
+          <li>Open <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">claude.com/claude-code</a> and follow the install instructions for your OS.
+            <div class="claude-tip">Quick path on macOS / Linux (paste in Terminal):
+              <code>curl -fsSL https://claude.ai/install.sh | bash</code>
+            </div>
+          </li>
+          <li>Sign in to Claude Code with your Anthropic account once installation finishes (the installer will prompt you).</li>
+          <li>Quit Yunomia (⌘Q) and reopen from Applications.</li>
+        </ol>
+        <p class="claude-note">Yunomia checks for Claude Code each time it launches. Once installed, this dialog stops appearing.</p>
+        <h4>If Claude Code IS already installed</h4>
+        <ol class="claude-steps">
+          <li>Open Terminal and run: <code>which claude</code></li>
+          <li>Click <b>Re-check</b> below. If still not detected, the binary is in a non-standard location - we'll add a manual-path option in a future release.</li>
+        </ol>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="claude-recheck" class="btn-primary">Re-check</button>
+        <button type="button" id="claude-dismiss" class="btn-ghost">Dismiss for now</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings modal -->
   <div id="settings-modal" class="modal hidden">
     <div class="modal-card settings-card">
