@@ -29,7 +29,7 @@ mkdir -p "$UPDATER_KEY_DIR"
 
 if [ ! -f "$UPDATER_PRIV" ]; then
   echo "==> Generating Tauri updater keypair (kept locally at $UPDATER_PRIV)"
-  npx --yes @tauri-apps/cli signer generate --write-keys "$UPDATER_PRIV" --no-password
+  npx --yes @tauri-apps/cli signer generate --write-keys "$UPDATER_PRIV" --ci
 else
   echo "==> Updater keypair already exists at $UPDATER_PRIV (re-using)"
 fi
