@@ -112,6 +112,32 @@ body {
   overflow-y: auto !important;     /* wheel scrolls scrollback */
 }
 
+/* Composer - VS Code-style multiline input pinned below the terminal */
+.composer {
+  display: flex; gap: 8px; align-items: flex-end;
+  padding: 10px 12px; background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.composer-input {
+  flex: 1; resize: none; min-height: 36px; max-height: 180px;
+  padding: 8px 12px; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: #ffffff; color: var(--text);
+  font-family: 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
+  font-size: 13px; line-height: 1.45;
+  outline: none; transition: border-color 120ms;
+}
+.composer-input:focus { border-color: var(--pepper); }
+.composer-input::placeholder { color: var(--text-low); }
+.composer-send {
+  height: 36px; min-width: 36px; padding: 0 12px;
+  border: 1px solid var(--pepper); background: var(--pepper); color: white;
+  border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600;
+}
+.composer-send:hover { filter: brightness(1.05); }
+.composer-send:active { transform: translateY(1px); }
+
 /* Dashboard placeholder when MC backend unconfigured/offline */
 .mc-empty {
   flex: 1; display: flex; align-items: center; justify-content: center;

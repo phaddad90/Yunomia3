@@ -169,7 +169,12 @@ function setActivePane(id) {
     const f = () => { try { ent.fit.fit(); } catch {} };
     requestAnimationFrame(() => requestAnimationFrame(f));
     setTimeout(f, 100);
-    setTimeout(() => { f(); try { ent.term.focus(); } catch {} }, 300);
+    setTimeout(() => {
+      f();
+      // Focus the composer textarea by default so the user can just start
+      // typing. Click on xterm itself focuses the terminal for slash commands.
+      try { ent.composer?.focus(); } catch {}
+    }, 300);
   }
 }
 
@@ -324,7 +329,46 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   const termWrap = document.createElement('div');
   termWrap.className = 'term-wrap';
   pane.appendChild(termWrap);
+
+  // Composer - VS Code / Claude.ai-style multiline input. Pinned below the
+  // terminal. Enter submits the buffer to the pty wrapped in bracketed-paste
+  // markers (claude code respects bracketed paste for multiline content);
+  // Shift+Enter inserts a newline in the textarea natively. Clicking the
+  // terminal still focuses xterm directly so slash commands, Esc, arrow keys
+  // still pass through to the TUI.
+  const composer = document.createElement('div');
+  composer.className = 'composer';
+  composer.innerHTML = `
+    <textarea class="composer-input" rows="1" placeholder="Message ${escapeHtml(code)}…  (Enter to send · Shift+Enter for newline · click terminal to use slash commands)"></textarea>
+    <button class="composer-send" type="button" title="Send (Enter)">↵</button>
+  `;
+  pane.appendChild(composer);
   $('#panes').appendChild(pane);
+
+  const composerInput = composer.querySelector('.composer-input');
+  const composerSend = composer.querySelector('.composer-send');
+  const autoGrow = () => {
+    composerInput.style.height = 'auto';
+    composerInput.style.height = Math.min(composerInput.scrollHeight, 180) + 'px';
+  };
+  const submitComposer = () => {
+    const text = composerInput.value;
+    if (!text) return;
+    // Bracketed paste: tells claude code's TUI "this is pasted text, preserve
+    // newlines" - cleaner than fighting per-version shift+enter conventions.
+    const wrapped = `\x1b[200~${text}\x1b[201~\r`;
+    invoke('pty_write', { args: { id: key, data: wrapped } }).catch((e) => console.warn('composer send', e));
+    composerInput.value = '';
+    autoGrow();
+  };
+  composerInput.addEventListener('input', autoGrow);
+  composerInput.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+      ev.preventDefault();
+      submitComposer();
+    }
+  });
+  composerSend.addEventListener('click', submitComposer);
 
   const term = new Terminal({
     cursorBlink: true,
@@ -391,18 +435,6 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     const ent = state.ptys.get(key);
     if (ent) ent.lastWriteAt = Date.now();
   });
-  // Shift+Enter must produce a newline inside claude code's prompt buffer
-  // instead of submitting. iTerm2's convention is \x1b\r (Option+Return);
-  // claude code's Ink TUI accepts that sequence. Plain Shift+Enter from
-  // xterm sends \r, indistinguishable from Enter, so we intercept here.
-  term.attachCustomKeyEventHandler((ev) => {
-    if (ev.type !== 'keydown') return true;
-    if (ev.key === 'Enter' && ev.shiftKey) {
-      invoke('pty_write', { args: { id: key, data: '\x1b\r' } }).catch(() => {});
-      return false;
-    }
-    return true;
-  });
   // TIOCSWINSZ on resize.
   term.onResize(({ cols, rows }) => {
     invoke('pty_resize', { args: { id: key, cols, rows } }).catch((e) => console.warn('pty_resize', e));
@@ -410,6 +442,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
 
   state.ptys.set(key, {
     term, fit, ro, unlistens: [unlistenOut, unlistenExit],
+    composer: composerInput,
     cwd, code, model, temp: !!opts.temp,
     lastStdoutAt: 0, lastWriteAt: 0, blockedReason: null, exited: false,
     spawnedAt: Date.now(),
@@ -429,8 +462,8 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     await invoke('pty_spawn', {
       args: { id: key, command: 'claude', args, cwd, env: null, cols: term.cols, rows: term.rows },
     });
-    // Hand keyboard focus to the terminal so the user can type immediately.
-    setTimeout(() => { try { term.focus(); } catch {} }, 100);
+    // Hand keyboard focus to the composer so the user can just start typing.
+    setTimeout(() => { try { composerInput.focus(); } catch {} }, 100);
   } catch (e) {
     // Surface the error inside the xterm pane so it's not a silent black box.
     const msg = String(e?.message || e);
