@@ -18,6 +18,9 @@ A multi-agent orchestration shell for any project. Open Yunomia, point it at a f
 - **Reports** show today's open, in progress, in review, and done counts plus an active-tickets-per-agent breakdown.
 - **Agent rail** shows only agents actually in this project. Each row carries an emoji, code, status (working, waiting, blocked, idle), colored pulse dot, ticket count, context-percent chip, per-agent PRE and CMPCT buttons, plus open-tab and kill controls.
 - **Per-agent files.** Every agent has `soul.md`, `kickoff.md`, `pre-compact.md`, and `reawaken.md`, editable in the Agents sub-tab. The bug protocol is baked into the default soul and kickoff so every spawned agent inherits it.
+- **Composer input.** Each agent pane has a real textarea pinned below the terminal. Type your message, hit Enter to send, Shift+Enter for a newline. Multi-line messages go to the agent as one bracketed-paste chunk so Claude sees one message with embedded newlines instead of multiple submissions. Click into the terminal itself when you need slash commands, Esc, or arrow-key passthrough.
+- **Files subtab.** A lazy-loaded directory tree rooted at the project. Click a file to open in your OS default app (Preview for images, browser for HTML, Pages for `.docx`). Click a folder to expand inline. `node_modules`, `.git`, `dist`, `target`, `.venv`, and friends are filtered out so the tree stays useful.
+- **Clickable paths in terminal output.** When an agent says "I created `/path/to/foo.html`", that path becomes a link. Click to open in the OS default app. Right-click anywhere on a recognised path for **Open / Reveal in Finder / Copy path**. Same context menu in the Files subtab for consistency.
 - **Per-agent wakeup mode.** Either `heartbeat` (cron-fires every N minutes even with no work) for orchestrators like Lead and CEO, or `on-assignment` (wakes only when a ticket lands) for workers. Configurable per agent.
 - **Lead-proposed mid-project agents.** Lead writes `agent-proposal.json` to ask for a new agent. Yunomia surfaces a modal with previews of the soul, kickoff, pre-compact, and reawaken templates. Approve and the four files are scaffolded plus the agent is spawned.
 - **Auto-compact at 50% context** when an agent is idle. Manual PRE and CMPCT buttons live in each agent rail row.
@@ -79,11 +82,12 @@ Click **Approve brief, go active**. Yunomia ingests the proposals: it creates ea
 
 ### 3. Active mode
 
-The Dashboard tab now shows sub-tabs: **Kanban**, **Activity**, **Inbox**, **Lessons**, **Reports**, and **Agents**.
+The Dashboard tab now shows sub-tabs: **Kanban**, **Activity**, **Inbox**, **Lessons**, **Reports**, **Agents**, and **Files**.
 
 - **Kanban** has a filter bar (search, assignee, type, due). Click any card for a side panel with all editing affordances and a schedule picker.
 - **Lessons** lists every Bug Lesson agents have captured. The bug-close hook reminds the assigned agent to file a lesson via the sentinel-file flow.
 - **Agents** is the project's roster config. Per-agent: model, wakeup mode, heartbeat interval, plus collapsible Kickoff, Goals, and Soul markdown editors.
+- **Files** is the project's directory tree. Click a file to open it in the OS default app, or right-click anywhere for Open / Reveal / Copy path.
 
 Lead can propose new agents at any time during the project. When it writes `agent-proposal.json`, Yunomia surfaces a modal so you can approve or reject. Approving scaffolds the four agent files, adds the agent to the roster, and (if `heartbeat`) spawns it.
 
@@ -111,6 +115,10 @@ On reopen, a yellow banner offers Resume buttons for the three most recent sessi
 
 | Action | macOS | Windows / Linux |
 |---|---|---|
+| Send composer message | Enter | Enter |
+| Newline in composer | Shift+Enter | Shift+Enter |
+| Open file path in terminal | Cmd+click | Ctrl+click |
+| Reveal / Open / Copy path | right-click | right-click |
 | Spawn agent (active phase only) | ⌘T | Ctrl+T |
 | Close current pty tab | ⌘W | Ctrl+W |
 | Switch to tab N | ⌘1 to ⌘9 | Ctrl+1 to Ctrl+9 |
