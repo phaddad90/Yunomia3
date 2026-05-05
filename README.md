@@ -264,7 +264,21 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 
 Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
 
-### v0.1.21 — terminal copy works, real file paths on drop
+### v0.1.22 — composer can't lose your typing any more
+
+User reported typing a message, hitting Enter, watching their text vanish, and seeing Lead's previous output get submitted instead. Root cause: xterm.js renders an invisible `.xterm-helper-textarea` for IME / clipboard handling that's still focusable + keyboard-active even with `disableStdin: true` — keystrokes could land there silently while the composer looked focused, so the composer was empty when Enter fired.
+
+Three layers of defence:
+
+- **Lock down xterm's helper textarea.** After `term.open()`, the helper gets `readonly`, `tabindex=-1`, `aria-hidden`, and `pointer-events: none`. xterm physically cannot capture focus or keyboard events any more.
+- **Global keystroke safety net.** A document-level capture-phase keydown listener routes any printable / Enter / Backspace key to the active pane's composer when the current focus target isn't a real input element. Stray keystrokes can't fall on the floor.
+- **Diagnostic submit log.** Every `submitComposer` writes `[composer] <CODE> submit <N> chars: <preview>` to the dev console so future reports of "my text disappeared" can be triaged from the console history.
+
+Also rolling forward the v0.1.21 fixes that got cancelled: terminal Cmd+C copy works, drag-and-drop from Finder inserts real OS file paths via Tauri's `onDragDropEvent`.
+
+### v0.1.21 — (cancelled, superseded by v0.1.22)
+
+### v0.1.20 — ad-hoc signing (drop Developer ID — Apple's codesign servers were the actual hang)
 
 Two regressions from the v0.1.17 composer rewrite, both reported.
 

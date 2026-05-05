@@ -365,6 +365,10 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     // Bracketed paste: tells claude code's TUI "this is pasted text, preserve
     // newlines" - cleaner than fighting per-version shift+enter conventions.
     const wrapped = `\x1b[200~${text}\x1b[201~\r`;
+    // Diagnostic: every submit logs the agent code, length, and a preview.
+    // If a "lost message" recurs, the console history will show whether the
+    // composer fired with empty value or wrong text.
+    console.info('[composer]', code, 'submit', text.length, 'chars:', text.slice(0, 80) + (text.length > 80 ? '…' : ''));
     invoke('pty_write', { args: { id: key, data: wrapped } }).catch((e) => console.warn('composer send', e));
     composerInput.value = '';
     autoGrow();
@@ -458,6 +462,19 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(termWrap);
+  // xterm renders a `.xterm-helper-textarea` for IME / clipboard / paste
+  // handling. Even with disableStdin: true it still captures keyboard
+  // focus (the hidden textarea remains tabbable and click-focusable).
+  // That's how v0.1.20 swallowed the user's typing - keystrokes landed
+  // in the helper textarea while the composer was the visual focus.
+  // Lock it down so xterm can't take focus from anything we render.
+  const helperTa = termWrap.querySelector('.xterm-helper-textarea');
+  if (helperTa) {
+    helperTa.setAttribute('readonly', 'readonly');
+    helperTa.setAttribute('tabindex', '-1');
+    helperTa.setAttribute('aria-hidden', 'true');
+    helperTa.style.pointerEvents = 'none';
+  }
   // Use rAF + a small extra delay so the pane's flex layout has settled
   // before fit reads clientWidth/clientHeight. Without this, fit() runs
   // against a 0×0 container and the term never grows.
@@ -1364,6 +1381,27 @@ window.addEventListener('keydown', (e) => {
 });
 
 bindUi();
+
+// Global keystroke safety net. If a printable key fires while focus is on
+// document.body / a non-input element / xterm, route it into the active
+// pane's composer so the user's typing can never disappear into a hidden
+// xterm helper textarea or a focused button.
+document.addEventListener('keydown', (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  // Only act on keystrokes that would normally produce input.
+  const isPrintable = ev.key.length === 1;
+  const isComposerKey = ev.key === 'Enter' || ev.key === 'Backspace' || ev.key === 'Delete';
+  if (!isPrintable && !isComposerKey) return;
+  const target = ev.target;
+  const tag = (target && target.tagName) || '';
+  // Don't poach keystrokes from real text inputs anywhere in the UI.
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (target && target.isContentEditable)) return;
+  const active = state.ptys.get(state.activePane);
+  if (!active?.composer) return;
+  active.composer.focus();
+  // Don't preventDefault - the focused composer will receive this same
+  // keystroke naturally on the next event loop tick.
+}, true);
 
 // Git status + CI badge polling (60 s tick).
 startGitCiPolling(() => state.selectedProject);
