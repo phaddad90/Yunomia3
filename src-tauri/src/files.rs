@@ -107,6 +107,61 @@ pub fn reveal_path(args: PathArgs) -> Result<(), String> {
     }
 }
 
+// Composer paste / drop image saver. Stores at ~/.yunomia/clipboard/<uuid>.<ext>
+// and returns the absolute path. The composer inserts that path into the
+// textarea so claude code receives a real file reference on submit.
+#[derive(Deserialize)]
+pub struct ClipboardImageArgs {
+    pub base64: String,
+    pub ext: String,
+}
+
+#[tauri::command]
+pub fn clipboard_image_save(args: ClipboardImageArgs) -> Result<String, String> {
+    use base64_decode::decode;
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let dir = PathBuf::from(&home).join(".yunomia").join("clipboard");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe_ext: String = args.ext.chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect();
+    let ext = if safe_ext.is_empty() { "png".to_string() } else { safe_ext };
+    let id = uuid::Uuid::new_v4().to_string();
+    let path = dir.join(format!("{}.{}", id, ext));
+    let bytes = decode(&args.base64).map_err(|e| format!("base64: {e}"))?;
+    fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+mod base64_decode {
+    // Tiny RFC4648 decoder so we don't pull in the `base64` crate just for
+    // this one path.
+    pub fn decode(s: &str) -> Result<Vec<u8>, &'static str> {
+        let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+        if s.len() % 4 != 0 { return Err("len not %4"); }
+        let mut out = Vec::with_capacity(s.len() / 4 * 3);
+        let chunks: Vec<&[u8]> = s.as_bytes().chunks(4).collect();
+        for chunk in chunks {
+            let mut buf = [0u8; 4];
+            let mut pad = 0u8;
+            for (i, &c) in chunk.iter().enumerate() {
+                buf[i] = match c {
+                    b'A'..=b'Z' => c - b'A',
+                    b'a'..=b'z' => c - b'a' + 26,
+                    b'0'..=b'9' => c - b'0' + 52,
+                    b'+' => 62,
+                    b'/' => 63,
+                    b'=' => { pad += 1; 0 }
+                    _ => return Err("bad char"),
+                };
+            }
+            let v = ((buf[0] as u32) << 18) | ((buf[1] as u32) << 12) | ((buf[2] as u32) << 6) | (buf[3] as u32);
+            out.push((v >> 16) as u8);
+            if pad < 2 { out.push((v >> 8) as u8); }
+            if pad < 1 { out.push(v as u8); }
+        }
+        Ok(out)
+    }
+}
+
 fn spawn_opener(target: &str) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     { std::process::Command::new("open").arg(target).spawn().map(|_| ()) }

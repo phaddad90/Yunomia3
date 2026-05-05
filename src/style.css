@@ -128,7 +128,8 @@ body {
   font-size: 13px; line-height: 1.45;
   outline: none; transition: border-color 120ms;
 }
-.composer-input:focus { border-color: var(--pepper); }
+.composer-input:focus { border-color: var(--pepper); box-shadow: 0 0 0 3px rgba(220,38,38,0.10); }
+.composer-input.composer-dropping { border-color: var(--pepper); background: #fff7f7; }
 .composer-input::placeholder { color: var(--text-low); }
 .composer-send {
   height: 36px; min-width: 36px; padding: 0 12px;

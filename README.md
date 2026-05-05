@@ -258,6 +258,20 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 
 Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
 
+### v0.1.17 — single composer input, image paste, drag-drop
+
+The composer in v0.1.12 sat on top of xterm's existing input layer instead of replacing it. Both could receive keystrokes, which made typing ambiguous and produced the "two input areas" feel. v0.1.17 makes the composer the single source of input.
+
+- **xterm input disabled** (`disableStdin: true`). The terminal renders claude's TUI but never accepts keystrokes. Click the terminal area and focus jumps back to the composer.
+- **Special keys forwarded by the composer** so claude's TUI still gets them:
+  - `Esc` cancels claude's current op (or clears the composer if it has text)
+  - `Ctrl+C` sends SIGINT-style interrupt to the pty
+  - `Tab` / `Shift+Tab` pass through when the composer is empty
+  - `↑` / `↓` arrows pass through to claude's input history when the composer is empty
+- **Image paste in the composer.** Paste a screenshot — Yunomia saves it to `~/.yunomia/clipboard/<uuid>.png` and inserts the absolute path into the textarea. Hit Enter and claude code receives the path with your message; it can `Read` the image natively.
+- **Drag-drop image** support, same path. The composer outline turns red while dragging to indicate the drop zone.
+- **Focus ring on the composer** when active so it's unambiguous which area takes input.
+
 ### v0.1.16 — project-folder storage, agent kickoffs, per-agent context, taxonomy
 
 Big architectural change plus a cluster of fixes for issues that surfaced during real onboarding runs.

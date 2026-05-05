@@ -346,7 +346,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   const composer = document.createElement('div');
   composer.className = 'composer';
   composer.innerHTML = `
-    <textarea class="composer-input" rows="1" placeholder="Message ${escapeHtml(code)}…  (Enter to send · Shift+Enter for newline · click terminal to use slash commands)"></textarea>
+    <textarea class="composer-input" rows="1" placeholder="Message ${escapeHtml(code)}…  (Enter send · Shift+Enter newline · paste / drop images · Esc cancels claude · ↑↓ arrows pass through)"></textarea>
     <button class="composer-send" type="button" title="Send (Enter)">↵</button>
   `;
   pane.appendChild(composer);
@@ -369,21 +369,90 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     autoGrow();
   };
   composerInput.addEventListener('input', autoGrow);
+  // Special-key passthrough: claude's TUI uses Esc/Ctrl+C/arrows/Tab. Since
+  // xterm.disableStdin is true, the composer is the only path to the pty so
+  // we forward these explicitly.
+  const sendRaw = (data) => invoke('pty_write', { args: { id: key, data } }).catch(() => {});
   composerInput.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && !ev.shiftKey) {
       ev.preventDefault();
       submitComposer();
+      return;
+    }
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      if (composerInput.value) { composerInput.value = ''; autoGrow(); return; }
+      sendRaw('\x1b');                  // cancel claude's current op
+      return;
+    }
+    if (ev.ctrlKey && ev.key === 'c' && !composerInput.selectionStart && !composerInput.selectionEnd) {
+      ev.preventDefault();
+      sendRaw('\x03');                  // SIGINT-style interrupt
+      return;
+    }
+    if (ev.key === 'Tab' && !composerInput.value) {
+      ev.preventDefault();
+      sendRaw(ev.shiftKey ? '\x1b[Z' : '\t');
+      return;
+    }
+    // Arrow keys when composer is empty → scroll claude's TUI history /
+    // navigate its prompt.
+    if (!composerInput.value) {
+      if (ev.key === 'ArrowUp')   { ev.preventDefault(); sendRaw('\x1b[A'); return; }
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); sendRaw('\x1b[B'); return; }
     }
   });
   composerSend.addEventListener('click', submitComposer);
 
+  // Image paste: capture clipboard image data, write to disk via Tauri,
+  // insert the absolute path into the composer at the caret. When the user
+  // submits, claude code receives the path and can ingest it via Read.
+  composerInput.addEventListener('paste', async (ev) => {
+    const items = ev.clipboardData?.items || [];
+    for (const it of items) {
+      if (it.kind !== 'file' || !it.type.startsWith('image/')) continue;
+      ev.preventDefault();
+      const file = it.getAsFile();
+      if (!file) continue;
+      const ext = (it.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
+      try {
+        const path = await saveBlobToClipboard(file, ext);
+        insertAtCursor(composerInput, (composerInput.value && !composerInput.value.endsWith('\n') ? '\n' : '') + path + '\n');
+        autoGrow();
+      } catch (e) { console.warn('image paste save failed', e); }
+      return;
+    }
+  });
+  // Drag-drop image: same path.
+  composerInput.addEventListener('dragover', (ev) => { ev.preventDefault(); composerInput.classList.add('composer-dropping'); });
+  composerInput.addEventListener('dragleave', () => composerInput.classList.remove('composer-dropping'));
+  composerInput.addEventListener('drop', async (ev) => {
+    ev.preventDefault();
+    composerInput.classList.remove('composer-dropping');
+    const files = ev.dataTransfer?.files || [];
+    for (const f of files) {
+      if (!f.type.startsWith('image/')) continue;
+      const ext = (f.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
+      try {
+        const path = await saveBlobToClipboard(f, ext);
+        insertAtCursor(composerInput, (composerInput.value && !composerInput.value.endsWith('\n') ? '\n' : '') + path + '\n');
+        autoGrow();
+      } catch (e) { console.warn('image drop save failed', e); }
+    }
+  });
+
   const term = new Terminal({
-    cursorBlink: true,
+    cursorBlink: false,
     fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
     fontSize: 13,
     theme: xtermTheme(),
     convertEol: true,
     scrollback: 10_000,
+    // The composer textarea below is the single input target. Stops xterm
+    // from intercepting keystrokes when the terminal area happens to have
+    // focus, which previously meant the user could accidentally type into
+    // both places at once.
+    disableStdin: true,
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
@@ -402,10 +471,13 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   // common extensions; left-click opens in OS default app, right-click
   // shows the same Open / Reveal / Copy menu the file tree uses.
   registerPathLinkProviders(term, cwd);
-  // Click anywhere in the terminal area focuses xterm's hidden textarea so
-  // keystrokes actually reach the pty. Without this the user types and
-  // nothing happens because focus stays on the parent dashboard chrome.
-  termWrap.addEventListener('mousedown', () => { try { term.focus(); } catch {} });
+  // Click in the terminal area routes focus back to the composer so the
+  // input target stays unambiguous. xterm.disableStdin is true so it
+  // wouldn't accept keystrokes anyway, but keeping focus on the composer
+  // means typing immediately works after you've inspected output.
+  termWrap.addEventListener('mousedown', () => {
+    setTimeout(() => { try { composerInput.focus(); } catch {} }, 0);
+  });
   // Mouse-wheel → scroll the terminal's scrollback. xterm normally hooks
   // wheel itself but the flex wrapper can swallow events; explicit listener
   // makes scrollback reliably reachable.
@@ -1320,6 +1392,30 @@ async function applyTaxonomyToForms() {
   }
 }
 function escapeHtmlAttr(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+// Save a clipboard / dropped image to ~/.yunomia/clipboard/ and return its
+// absolute path. Insert that path into the composer so the user's message
+// references a real file claude code can Read.
+async function saveBlobToClipboard(file, ext) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  // Send as base64 to keep the Tauri argument JSON-safe.
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < buf.length; i += chunk) bin += String.fromCharCode(...buf.subarray(i, i + chunk));
+  const base64 = btoa(bin);
+  return await invoke('clipboard_image_save', { args: { base64, ext } });
+}
+
+function insertAtCursor(textarea, text) {
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? textarea.value.length;
+  const before = textarea.value.slice(0, start);
+  const after = textarea.value.slice(end);
+  textarea.value = before + text + after;
+  const newPos = start + text.length;
+  textarea.selectionStart = textarea.selectionEnd = newPos;
+  textarea.focus();
+}
 window.__applyTaxonomy = applyTaxonomyToForms;
 applyTaxonomyToForms();
 

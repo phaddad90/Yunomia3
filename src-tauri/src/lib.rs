@@ -80,6 +80,7 @@ pub fn run() {
             files::list_dir,
             files::open_path,
             files::reveal_path,
+            files::clipboard_image_save,
             credentials::credentials_list,
             credentials::credentials_upsert,
             credentials::credentials_delete,
