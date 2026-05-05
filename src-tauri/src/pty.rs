@@ -194,7 +194,21 @@ fn spawn_inner(
     // children (MCP servers, the native installer's helper, etc.) can find
     // npm/brew/bun/volta-installed binaries when the .app is launched from
     // Finder. The frontend's optional env override wins on duplicate keys.
+    //
+    // On Windows, LOGIN_SHELL_PATH is built from Unix-only paths
+    // (/usr/local/bin, ~/.npm-global/bin etc.) which don't exist on Windows
+    // and would override the inherited PATH that does contain the user's
+    // npm/cargo/bun install dirs. So on Windows we inherit the parent
+    // process PATH (which Yunomia3 sees because it was launched from
+    // Explorer / shortcut / shell, all of which inherit the user's PATH).
+    #[cfg(not(target_os = "windows"))]
     cmd.env("PATH", LOGIN_SHELL_PATH.as_str());
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(parent_path) = std::env::var("PATH") {
+            cmd.env("PATH", parent_path);
+        }
+    }
     if let Some(env) = &args.env {
         for (k, v) in env {
             cmd.env(k, v);
