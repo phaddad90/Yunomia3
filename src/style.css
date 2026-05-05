@@ -278,19 +278,20 @@ body {
   white-space: pre-wrap; word-break: break-word;
 }
 
-/* Modals (shared by credentials + deploys + future) */
-.modal-backdrop {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 9000;
-}
-.modal {
-  background: var(--surface); border-radius: 12px;
-  padding: 20px; width: min(480px, 90vw);
-  box-shadow: 0 16px 40px rgba(0,0,0,0.2);
-  max-height: 90vh; overflow: auto;
-}
-.modal-wide { width: min(640px, 92vw); }
+/* Modals — descendant rules (apply to children of .modal backdrop)
+ *
+ * NOTE 2026-05-05: legacy .modal-backdrop wrapper + .modal card pattern
+ * was removed in favour of the .modal-backdrop-and-card-in-one pattern
+ * defined below at line 290 (.modal as the backdrop, .modal-card as the
+ * card). The old .modal { width: min(480px, 90vw); position: static } rule
+ * was conflicting with the new .modal { position: fixed; inset: 0 } rule:
+ * the explicit width forced .modal to 480px wide, and inset: 0 + width
+ * collide so .modal anchored to the LEFT edge of the viewport (since
+ * left:0 wins over right:0 when width is set). This made every modal
+ * (project picker, spawn agent, settings, onboarding) render in the
+ * far-left strip instead of centred. Removing the conflicting block
+ * restores correct centring without any HTML changes.
+ */
 .modal h2 { margin: 0 0 16px; font-size: 16px; }
 .modal label { display: block; margin-bottom: 12px; font-size: 12px; color: var(--text-mid); }
 .modal input[type="text"], .modal textarea, .modal select {
