@@ -17,6 +17,9 @@ import { refresh as refreshKanban, getTicketStats, setFilter as setKanbanFilter 
 import { renderLessonsView, bindLessonModal } from './lib/lessons.js';
 import { renderActivityView, renderInboxView, renderReportsView, renderAgentsView, unprocessedInboxCount } from './lib/views.js';
 import { renderFileTree, openPath, revealPath, copyPath, showContextMenu } from './lib/files.js';
+import { renderCredentials } from './lib/credentials.js';
+import { renderDeploys } from './lib/deploys.js';
+import { startGitCiPolling, refreshGit, refreshCi } from './lib/git-ci.js';
 import { writeToAgent } from './lib/mc-bridge.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { bootCheckForUpdates } from './lib/updater.js';
@@ -109,6 +112,8 @@ function bindProjectPicker() {
     saveProjects();
     void refreshResumeBanner();
     void window.__renderProjectView?.();
+    void refreshGit(state.selectedProject);
+    void refreshCi(state.selectedProject);
   });
 }
 
@@ -774,7 +779,9 @@ async function renderSubview(which) {
   if (which === 'lessons')  await renderLessonsView(document.getElementById('lessons-root'), cwd);
   if (which === 'reports')  await renderReportsView(document.getElementById('reports-root'), cwd);
   if (which === 'agents')   await renderAgentsView(document.getElementById('agents-root'), cwd);
-  if (which === 'files')    await renderFileTree(document.getElementById('files-root'), cwd);
+  if (which === 'files')        await renderFileTree(document.getElementById('files-root'), cwd);
+  if (which === 'credentials')  await renderCredentials(document.getElementById('credentials-root'), cwd);
+  if (which === 'deploys')      await renderDeploys(document.getElementById('deploys-root'), cwd);
 }
 async function refreshInboxBadge() {
   const cwd = state.selectedProject;
@@ -1217,6 +1224,9 @@ window.addEventListener('keydown', (e) => {
 });
 
 bindUi();
+
+// Git status + CI badge polling (60 s tick).
+startGitCiPolling(() => state.selectedProject);
 
 // PH-134 Phase 2 - bridge to MC + auto-compact orchestrator.
 void initCompactOrchestrator();

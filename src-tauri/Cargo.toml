@@ -1,6 +1,6 @@
 [package]
 name = "yunomia"
-version = "0.1.14"
+version = "0.1.15"
 edition = "2021"
 description = "Yunomia - Tauri shell hosting Claude Code agent fleets per project"
 authors = ["TA"]
@@ -28,6 +28,8 @@ anyhow = "1"
 log = "0.4"
 env_logger = "0.11"
 uuid = { version = "1", features = ["v4"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+sha2 = "0.10"
 
 [profile.release]
 panic = "abort"

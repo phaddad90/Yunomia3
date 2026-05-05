@@ -61,26 +61,26 @@ fn project_dir(cwd: &str) -> PathBuf {
     yunomia_dir().join("projects").join(sanitise(cwd))
 }
 
-fn ensure_project_dir(cwd: &str) -> Result<PathBuf, String> {
+pub(crate) fn ensure_project_dir(cwd: &str) -> Result<PathBuf, String> {
     let dir = project_dir(cwd);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
 
-fn read_json<T: for<'de> Deserialize<'de> + Default>(path: &PathBuf) -> Result<T, String> {
+pub(crate) fn read_json<T: for<'de> Deserialize<'de> + Default>(path: &PathBuf) -> Result<T, String> {
     if !path.exists() { return Ok(T::default()); }
     let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
     if raw.trim().is_empty() { return Ok(T::default()); }
     serde_json::from_str(&raw).map_err(|e| e.to_string())
 }
 
-fn write_json<T: Serialize>(path: &PathBuf, val: &T) -> Result<(), String> {
+pub(crate) fn write_json<T: Serialize>(path: &PathBuf, val: &T) -> Result<(), String> {
     let raw = serde_json::to_string_pretty(val).map_err(|e| e.to_string())?;
     fs::write(path, raw).map_err(|e| e.to_string())
 }
 
-fn now_iso() -> String { chrono::Utc::now().to_rfc3339() }
-fn new_uuid() -> String { uuid::Uuid::new_v4().to_string() }
+pub(crate) fn now_iso() -> String { chrono::Utc::now().to_rfc3339() }
+pub(crate) fn new_uuid() -> String { uuid::Uuid::new_v4().to_string() }
 
 fn project_prefix(cwd: &str, dir: &PathBuf) -> String {
     let path = dir.join("prefix.txt");
@@ -1054,7 +1054,7 @@ pub fn proposals_clear(args: ProposalsClearArgs) -> Result<(), String> {
     Ok(())
 }
 
-fn write_audit(dir: &PathBuf, action: &str, ticket_id: &str, actor: &str, details: serde_json::Value) -> Result<(), String> {
+pub(crate) fn write_audit(dir: &PathBuf, action: &str, ticket_id: &str, actor: &str, details: serde_json::Value) -> Result<(), String> {
     let path = dir.join("audit.json");
     let mut audit: Vec<AuditEntry> = read_json(&path)?;
     audit.push(AuditEntry {

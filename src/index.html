@@ -21,6 +21,8 @@
         <span>Project</span>
         <select id="project-picker" aria-label="Project root"></select>
       </label>
+      <span id="git-badge" class="git-badge" hidden></span>
+      <span id="ci-badge" class="ci-badge" hidden></span>
       <button id="spawn-agent" class="btn-primary" type="button" hidden>+ Spawn agent</button>
       <button id="settings-btn" class="btn-ghost" type="button" title="Settings">⚙</button>
     </div>
@@ -45,6 +47,8 @@
             <button class="subtab" data-sub="reports">Reports</button>
             <button class="subtab" data-sub="agents">Agents</button>
             <button class="subtab" data-sub="files">Files</button>
+            <button class="subtab" data-sub="credentials">Credentials</button>
+            <button class="subtab" data-sub="deploys">Deploys</button>
           </nav>
           <div id="kanban-filters" class="kanban-filters">
             <input id="filter-q" type="text" placeholder="Search title / body…" />
@@ -75,6 +79,8 @@
           <div id="reports-root" class="subview" data-view="reports" hidden></div>
           <div id="agents-root" class="subview" data-view="agents" hidden></div>
           <div id="files-root" class="subview" data-view="files" hidden></div>
+          <div id="credentials-root" class="subview" data-view="credentials" hidden></div>
+          <div id="deploys-root" class="subview" data-view="deploys" hidden></div>
         </div>
         <div class="resizer" data-resize="right"></div>
         <aside class="rail-right">

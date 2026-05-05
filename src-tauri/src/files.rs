@@ -80,7 +80,8 @@ pub struct PathArgs { pub path: String }
 
 #[tauri::command]
 pub fn open_path(args: PathArgs) -> Result<(), String> {
-    if !Path::new(&args.path).exists() {
+    let is_url = args.path.starts_with("http://") || args.path.starts_with("https://");
+    if !is_url && !Path::new(&args.path).exists() {
         return Err(format!("path does not exist: {}", args.path));
     }
     spawn_opener(&args.path).map_err(|e| e.to_string())

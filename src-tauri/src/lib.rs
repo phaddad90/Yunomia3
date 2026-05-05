@@ -1,7 +1,10 @@
 // Yunomia - Tauri library entry. Spawns ptys, bridges them to the frontend
 // over Tauri events. Frontend mounts an xterm.js per pty. Project-agnostic.
 
+mod credentials;
+mod deploys;
 mod files;
+mod git;
 mod pty;
 mod store;
 mod tickets;
@@ -73,6 +76,17 @@ pub fn run() {
             files::list_dir,
             files::open_path,
             files::reveal_path,
+            credentials::credentials_list,
+            credentials::credentials_upsert,
+            credentials::credentials_delete,
+            credentials::credentials_reveal,
+            deploys::deploys_list,
+            deploys::deploys_upsert,
+            deploys::deploys_delete,
+            deploys::deploys_run,
+            git::git_status,
+            git::ci_last_run,
+            git::gh_pr_create,
         ])
         .setup(|app| {
             let _window = app.get_webview_window("main").expect("main window missing");

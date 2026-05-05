@@ -250,6 +250,7 @@ function renderSide(t) {
       <button id="k-side-start" class="btn-secondary">Start</button>
       <button id="k-side-handoff" class="btn-secondary">Handoff</button>
       <button id="k-side-done" class="btn-secondary">Done</button>
+      <button id="k-side-pr" class="btn-ghost" title="Create a GitHub PR using this ticket's title and body">↗ Create PR</button>
     </footer>
   `;
   $('#k-side-close').addEventListener('click', closeSide);
@@ -261,6 +262,19 @@ function renderSide(t) {
   $('#k-side-bodyedit').addEventListener('click', () => editBodyInline(t));
   $('#k-side-start').addEventListener('click', () => transition(t.id, 'start'));
   $('#k-side-handoff').addEventListener('click', () => transition(t.id, 'handoff'));
+  $('#k-side-pr').addEventListener('click', async () => {
+    const title = `${t.human_id || ''} ${t.title || ''}`.trim();
+    const body = (t.body_md || '').trim() + (t.human_id ? `\n\n_Yunomia ticket: ${t.human_id}_` : '');
+    if (!confirm(`Create a GitHub PR with title:\n\n${title}\n\nProceed? (Requires gh CLI authenticated for this repo.)`)) return;
+    try {
+      const res = await invoke('gh_pr_create', { args: { cwd: k.cwd, title, body, draft: false } });
+      await invoke('comments_create', { args: { cwd: k.cwd, ticketId: t.id, bodyMd: `Created PR: ${res.url}`, authorLabel: 'PETER' } });
+      alert(`PR created: ${res.url}`);
+      try { await invoke('open_path', { args: { path: res.url } }); } catch {}
+    } catch (e) {
+      alert(`PR creation failed:\n${e}`);
+    }
+  });
   // Compliance UI: read eligible_actions and gate the buttons.
   void applyEligibility(t.id);
   $('#k-side-done').addEventListener('click', async () => {

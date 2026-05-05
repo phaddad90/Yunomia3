@@ -82,12 +82,14 @@ Click **Approve brief, go active**. Yunomia ingests the proposals: it creates ea
 
 ### 3. Active mode
 
-The Dashboard tab now shows sub-tabs: **Kanban**, **Activity**, **Inbox**, **Lessons**, **Reports**, **Agents**, and **Files**.
+The Dashboard tab now shows sub-tabs: **Kanban**, **Activity**, **Inbox**, **Lessons**, **Reports**, **Agents**, **Files**, **Credentials**, and **Deploys**.
 
 - **Kanban** has a filter bar (search, assignee, type, due). Click any card for a side panel with all editing affordances and a schedule picker.
 - **Lessons** lists every Bug Lesson agents have captured. The bug-close hook reminds the assigned agent to file a lesson via the sentinel-file flow.
 - **Agents** is the project's roster config. Per-agent: model, wakeup mode, heartbeat interval, plus collapsible Kickoff, Goals, and Soul markdown editors.
 - **Files** is the project's directory tree. Click a file to open it in the OS default app, or right-click anywhere for Open / Reveal / Copy path.
+- **Credentials** holds per-project secrets (SSH keys, passwords, tokens, env values, JSON). Stored in your OS keychain; the file `credentials.json` carries names + types only. Used by Deploys for env injection.
+- **Deploys** lists deploy targets, each a shell command with an approval rule (`auto`, `requires-peter`, `requires-qa`, `requires-tag`) and optional preflight + injected credential. Run / dry-run buttons; live output streams into a runner panel.
 
 Lead can propose new agents at any time during the project. When it writes `agent-proposal.json`, Yunomia surfaces a modal so you can approve or reject. Approving scaffolds the four agent files, adds the agent to the roster, and (if `heartbeat`) spawns it.
 
@@ -240,6 +242,22 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 ## Changelog
 
 Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
+
+### v0.1.15 — credentials, deploys, git/CI
+
+Three layers landing together for high-velocity dev:
+
+- **Credentials store** keyed off the OS keychain (macOS Keychain, Windows Credential Manager, Linux libsecret). Each entry has a name, kind (`ssh-key` / `password` / `token` / `env` / `json`), optional env var name, and optional note. Names + types live in `credentials.json`; values never touch disk. Show / Edit / Delete controls in the new **Credentials** subtab. Reads, writes, deletes audit-log automatically (`cred.read`, `cred.write`, `cred.delete`).
+- **Deploy targets** in the new **Deploys** subtab. Each target is a shell command run from the project root, with optional preflight (e.g. `npm test && npm run build`) and an approval rule:
+  - `auto` — runs immediately
+  - `requires-peter` — only PETER can trigger
+  - `requires-qa` — needs a comment from QA on the linked ticket containing `QA verdict: pass`
+  - `requires-tag` — ticket must carry the `deploy-approved` tag
+  Targets can reference a credential by name; on run, that secret is injected into the child env (as `<env_var>` if set on the cred, else `CRED_<NAME>`). Stdout / stderr stream live to a runner panel. Every run audits `deploy.start` / `deploy.complete` (or `deploy.blocked`).
+- **Git status badge** next to the project picker: branch, dirty marker, ahead/behind. **CI badge** alongside it shows the most recent GitHub Actions run for the project (queued / running / pass / fail) — click to open in browser. Both poll on a 60 s tick.
+- **Create PR from a ticket.** The ticket side panel has an `↗ Create PR` button that calls `gh pr create` with the ticket's title + body, drops the resulting URL as a comment on the ticket, and opens the PR in your browser. Closes the loop kanban → branch → PR.
+
+All gh-driven features degrade gracefully if `gh` isn't installed or authenticated — badges hide, PR creation surfaces the error.
 
 ### v0.1.14 — pty PATH seeded from login shell
 
