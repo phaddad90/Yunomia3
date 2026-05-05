@@ -1,6 +1,7 @@
 // Yunomia - Tauri library entry. Spawns ptys, bridges them to the frontend
 // over Tauri events. Frontend mounts an xterm.js per pty. Project-agnostic.
 
+mod files;
 mod pty;
 mod store;
 mod tickets;
@@ -69,6 +70,9 @@ pub fn run() {
             tickets::agent_proposal_clear,
             tickets::agent_proposal_approve,
             tickets::pending_lessons_scan,
+            files::list_dir,
+            files::open_path,
+            files::reveal_path,
         ])
         .setup(|app| {
             let _window = app.get_webview_window("main").expect("main window missing");

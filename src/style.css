@@ -138,6 +138,47 @@ body {
 .composer-send:hover { filter: brightness(1.05); }
 .composer-send:active { transform: translateY(1px); }
 
+/* File tree (Files subtab) */
+.files-header {
+  display: flex; gap: 8px; align-items: center; justify-content: space-between;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.files-cwd {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-mid);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
+}
+.files-refresh { padding: 2px 8px; }
+.file-tree { list-style: none; margin: 0; padding: 4px 0; font-size: 13px; }
+.file-row {
+  display: flex; gap: 6px; align-items: center; padding: 3px 8px 3px 8px;
+  cursor: pointer; user-select: none; font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.file-row:hover { background: var(--surface-2); }
+.file-row.is-dir { font-weight: 500; }
+.file-icon { width: 16px; text-align: center; flex-shrink: 0; color: var(--text-mid); }
+.file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-size { color: var(--text-low); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+.file-loading, .file-empty, .file-error, .files-empty {
+  color: var(--text-low); padding: 6px 12px; cursor: default; font-style: italic;
+}
+.file-row.file-loading:hover, .file-row.file-empty:hover, .file-row.file-error:hover { background: transparent; }
+
+/* Context menu (right-click) */
+.ctx-menu {
+  position: fixed; z-index: 9999;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  padding: 4px; min-width: 200px;
+  font-size: 13px;
+}
+.ctx-menu-item {
+  display: block; width: 100%; text-align: left;
+  padding: 6px 10px; border: 0; background: transparent; cursor: pointer;
+  border-radius: 4px; color: var(--text);
+}
+.ctx-menu-item:hover { background: var(--surface-2); }
+
 /* Dashboard placeholder when MC backend unconfigured/offline */
 .mc-empty {
   flex: 1; display: flex; align-items: center; justify-content: center;

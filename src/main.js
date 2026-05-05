@@ -16,6 +16,7 @@ import { loadOnboardingForProject, renderOnboardingView, reopenOnboarding } from
 import { refresh as refreshKanban, getTicketStats, setFilter as setKanbanFilter } from './lib/kanban.js';
 import { renderLessonsView, bindLessonModal } from './lib/lessons.js';
 import { renderActivityView, renderInboxView, renderReportsView, renderAgentsView, unprocessedInboxCount } from './lib/views.js';
+import { renderFileTree, openPath, revealPath, copyPath, showContextMenu } from './lib/files.js';
 import { writeToAgent } from './lib/mc-bridge.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { bootCheckForUpdates } from './lib/updater.js';
@@ -390,6 +391,11 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   // collapses) re-fits the terminal to fill the pane.
   const ro = new ResizeObserver(() => { try { fit.fit(); } catch {} });
   ro.observe(termWrap);
+  // Clickable file paths in claude's output. Match absolute paths
+  // (/Users/.., /home/.., /tmp/.., /var/.., C:\..) and bare filenames with
+  // common extensions; left-click opens in OS default app, right-click
+  // shows the same Open / Reveal / Copy menu the file tree uses.
+  registerPathLinkProviders(term, cwd);
   // Click anywhere in the terminal area focuses xterm's hidden textarea so
   // keystrokes actually reach the pty. Without this the user types and
   // nothing happens because focus stays on the parent dashboard chrome.
@@ -500,6 +506,83 @@ async function spawnAgent(code, model, cwd, opts = {}) {
       }, 2500);
     }
   }
+}
+
+// File-path link provider for xterm. Detects:
+//   - absolute paths under /Users, /home, /tmp, /var, /opt, /etc
+//   - quoted paths inside backticks or single/double quotes
+//   - paths with common extensions (.html, .md, .png, .pdf, .json, ...)
+// Bare relative paths are resolved against the agent's cwd. Click → OS
+// default app; right-click → context menu (Open / Reveal / Copy).
+const PATH_RE = /(?:^|[\s'"`(\[<])((?:\/(?:Users|home|tmp|var|opt|etc|private)\/[^\s'"`)\]<>]+)|(?:\.{0,2}\/[^\s'"`)\]<>]+\.[A-Za-z0-9]{1,8})|(?:[A-Za-z][A-Za-z0-9_\-]*(?:\/[A-Za-z0-9_\-.]+)+\.[A-Za-z0-9]{1,8}))/g;
+
+function resolveAgainstCwd(match, cwd) {
+  if (match.startsWith('/')) return match;
+  if (!cwd) return null;
+  if (match.startsWith('./')) return cwd.replace(/\/$/, '') + match.slice(1);
+  if (match.startsWith('../')) return null;
+  return cwd.replace(/\/$/, '') + '/' + match;
+}
+
+function registerPathLinkProviders(term, cwd) {
+  term.registerLinkProvider({
+    provideLinks(lineNumber, callback) {
+      const line = term.buffer.active.getLine(lineNumber - 1);
+      if (!line) { callback(undefined); return; }
+      const text = line.translateToString(false);
+      const links = [];
+      let m;
+      PATH_RE.lastIndex = 0;
+      while ((m = PATH_RE.exec(text)) !== null) {
+        const captured = m[1];
+        if (!captured) continue;
+        const startCol = m.index + (m[0].length - captured.length) + 1;
+        const endCol = startCol + captured.length - 1;
+        const abs = resolveAgainstCwd(captured, cwd);
+        if (!abs) continue;
+        links.push({
+          range: { start: { x: startCol, y: lineNumber }, end: { x: endCol, y: lineNumber } },
+          text: captured,
+          activate: () => { void openPath(abs); },
+          hover: (_ev, _t) => {},
+          leave: () => {},
+        });
+      }
+      callback(links);
+    },
+  });
+  // Right-click in the terminal area → if cursor is on a recognised path,
+  // show the open/reveal/copy menu. xterm doesn't expose linkProvider matches
+  // via context-menu directly, so we re-scan the line under the click.
+  term.element?.addEventListener('contextmenu', (ev) => {
+    const rect = term.element.getBoundingClientRect();
+    const cell = term._core?._renderService?.dimensions?.css?.cell;
+    if (!cell) return;
+    const col = Math.floor((ev.clientX - rect.left) / cell.width) + 1;
+    const row = Math.floor((ev.clientY - rect.top) / cell.height) + term.buffer.active.viewportY + 1;
+    const line = term.buffer.active.getLine(row - 1);
+    if (!line) return;
+    const text = line.translateToString(false);
+    PATH_RE.lastIndex = 0;
+    let m;
+    while ((m = PATH_RE.exec(text)) !== null) {
+      const captured = m[1];
+      if (!captured) continue;
+      const startCol = m.index + (m[0].length - captured.length) + 1;
+      const endCol = startCol + captured.length - 1;
+      if (col >= startCol && col <= endCol) {
+        const abs = resolveAgainstCwd(captured, cwd);
+        if (!abs) return;
+        ev.preventDefault();
+        showContextMenu(ev.clientX, ev.clientY, [
+          { label: 'Open with default app', action: () => openPath(abs) },
+          { label: 'Reveal in Finder', action: () => revealPath(abs) },
+          { label: 'Copy path', action: () => copyPath(abs) },
+        ]);
+        return;
+      }
+    }
+  });
 }
 
 // PH-134 Phase 2 - wakeup prompt content.
@@ -691,6 +774,7 @@ async function renderSubview(which) {
   if (which === 'lessons')  await renderLessonsView(document.getElementById('lessons-root'), cwd);
   if (which === 'reports')  await renderReportsView(document.getElementById('reports-root'), cwd);
   if (which === 'agents')   await renderAgentsView(document.getElementById('agents-root'), cwd);
+  if (which === 'files')    await renderFileTree(document.getElementById('files-root'), cwd);
 }
 async function refreshInboxBadge() {
   const cwd = state.selectedProject;
