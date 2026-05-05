@@ -264,6 +264,16 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 
 Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
 
+### v0.1.20 — ad-hoc signing (drop Developer ID — Apple's codesign servers were the actual hang)
+
+v0.1.19 turned off Apple notarization but the build still stalled 21 min on the `codesign` step itself for the macOS ARM bundle. Reading the logs revealed it: `codesign` makes network calls to Apple's CRL / OCSP / timestamp authority servers when signing with a Developer ID cert, and those servers were timing out exactly like the notary queue. Same Apple-infrastructure black box, different door.
+
+- macOS bundles now use **ad-hoc signing** (literally `codesign --sign -`) — a hash-only signature with zero Apple-server contact. `tauri.conf.json` already had `signingIdentity: "-"` configured; `APPLE_SIGNING_IDENTITY` was overriding it, now removed.
+- Build time is now bounded by rust compilation alone (~6 min cold cache, faster warm).
+- UX trade is identical to v0.1.19: first-launch right-click → Open, Gatekeeper remembers.
+- Auto-update is unaffected — it uses minisign signatures, not Apple codesign.
+- The "Import Apple cert" CI step is gone (no Developer ID needed in CI any more); APPLE_CERTIFICATE secrets in GitHub can be deleted at your leisure.
+
 ### v0.1.19 — drop Apple notarization (4× faster releases)
 
 The v0.1.18 build still hung 44+ min on Apple notarization for the ARM bundle. Apple's notary service is a black-box queue that randomly stalls bundles for 30–90 min. ARM vs Intel never mattered — same queue. We were paying a 60-min variance toll on every release.

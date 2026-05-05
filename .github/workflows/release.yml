@@ -73,33 +73,20 @@ jobs:
       - name: npm install
         run: npm ci
 
-      - name: Import Apple cert
-        if: startsWith(matrix.platform, 'macos') && env.APPLE_CERTIFICATE != ''
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
-          security create-keychain -p actions build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p actions build.keychain
-          security import cert.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
-          rm cert.p12
-
       - name: Build (Tauri)
         id: tauri
-        # Codesign with the Developer ID cert (so the updater's signature
-        # check passes + Gatekeeper recognises us), but DO NOT upload to
-        # Apple's notary service. Their queue routinely stalled the build
-        # 30-90 min while everything else finished in 4-6. First-launch UX
-        # on macOS becomes "right-click → Open" instead of "opens
-        # immediately"; that's the standard indie-devtool tradeoff and
-        # acceptable here. APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID are
-        # intentionally NOT exported - tauri-action skips notarization
-        # when those are absent.
+        # macOS bundles use AD-HOC signing (codesign --sign -) instead of
+        # Developer ID. v0.1.19 dropped Apple notarization but the builds
+        # still hung 20+ min on Developer ID codesign because codesign
+        # makes network calls to Apple's CRL/OCSP/timestamp servers, which
+        # stall identically to the notarization queue. Ad-hoc signing
+        # contacts no Apple servers - just a hash-only signature. Updater
+        # verification is independent of macOS codesign (minisign) so the
+        # auto-update flow is unchanged. UX trade is identical to v0.1.19:
+        # first-launch right-click → Open, then Gatekeeper remembers.
+        # tauri.conf.json already has signingIdentity = "-" (ad-hoc); we
+        # just stop overriding it via APPLE_SIGNING_IDENTITY env var.
         env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         uses: tauri-apps/tauri-action@v0
