@@ -20,7 +20,7 @@ import { renderFileTree, openPath, revealPath, copyPath, showContextMenu } from 
 import { renderCredentials } from './lib/credentials.js';
 import { renderDeploys } from './lib/deploys.js';
 import { startGitCiPolling, refreshGit, refreshCi } from './lib/git-ci.js';
-import { writeToAgent } from './lib/mc-bridge.js';
+import { writeToAgent, startMcBridge } from './lib/mc-bridge.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { bootCheckForUpdates, installUpdate } from './lib/updater.js';
 import { getVersion } from '@tauri-apps/api/app';
