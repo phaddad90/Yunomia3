@@ -8,11 +8,21 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
+// Cross-platform home directory resolution. On Windows HOME is not set by
+// default, and Tauri does not inject it; without USERPROFILE fallback, all
+// downstream callers resolved to "." (cwd-relative) which silently broke
+// state persistence across launches when cwd differed.
+pub fn home_dir() -> PathBuf {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
+}
+
 // PH-134 - Yunomia v3 owns its own state dir. NOT ~/.printpepper/. Decoupled
 // from PrintPepper completely.
 fn yunomia_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".yunomia")
+    home_dir().join(".yunomia")
 }
 
 fn agent_models_path() -> PathBuf {
@@ -111,13 +121,13 @@ pub struct EnumerateArgs {
 
 #[tauri::command]
 pub fn enumerate_sessions(args: EnumerateArgs) -> Result<Vec<SessionInfo>, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let home = home_dir();
     let sanitised = args
         .cwd
         .trim_start_matches('/')
         .replace('/', "-")
         .replace('.', "-");
-    let proj_dir = PathBuf::from(&home).join(".claude").join("projects").join(format!("-{}", sanitised));
+    let proj_dir = home.join(".claude").join("projects").join(format!("-{}", sanitised));
     if !proj_dir.exists() {
         return Ok(Vec::new());
     }
@@ -172,15 +182,13 @@ pub struct ContextEstimateArgs {
 const CONTEXT_WINDOW_TOKENS: u64 = 200_000;
 
 fn claude_project_dir(cwd: &str) -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let sanitised = cwd.trim_start_matches('/').replace('/', "-").replace('.', "-");
-    Ok(PathBuf::from(&home).join(".claude").join("projects").join(format!("-{}", sanitised)))
+    Ok(home_dir().join(".claude").join("projects").join(format!("-{}", sanitised)))
 }
 
 fn yunomia_project_op_dir(cwd: &str) -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let sanitised = cwd.trim_start_matches('/').replace('/', "-").replace(' ', "_");
-    Ok(PathBuf::from(&home).join(".yunomia").join("projects").join(sanitised))
+    Ok(home_dir().join(".yunomia").join("projects").join(sanitised))
 }
 
 fn agent_session_lookup(cwd: &str, agent_code: &str) -> Option<String> {
@@ -363,9 +371,8 @@ pub fn delete_session(args: DeleteSessionArgs) -> Result<(), String> {
     if args.session_id.contains('/') || args.session_id.contains('.') {
         return Err("invalid session id".into());
     }
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let sanitised = args.cwd.trim_start_matches('/').replace('/', "-").replace('.', "-");
-    let path = PathBuf::from(&home).join(".claude").join("projects").join(format!("-{}", sanitised)).join(format!("{}.jsonl", args.session_id));
+    let path = home_dir().join(".claude").join("projects").join(format!("-{}", sanitised)).join(format!("{}.jsonl", args.session_id));
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     }

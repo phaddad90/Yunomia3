@@ -53,8 +53,7 @@ pub struct AuditEntry {
 }
 
 fn yunomia_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".yunomia")
+    crate::store::home_dir().join(".yunomia")
 }
 
 fn sanitise(cwd: &str) -> String {

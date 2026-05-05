@@ -120,8 +120,7 @@ pub struct ClipboardImageArgs {
 #[tauri::command]
 pub fn clipboard_image_save(args: ClipboardImageArgs) -> Result<String, String> {
     use base64_decode::decode;
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let dir = PathBuf::from(&home).join(".yunomia").join("clipboard");
+    let dir = crate::store::home_dir().join(".yunomia").join("clipboard");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let safe_ext: String = args.ext.chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect();
     let ext = if safe_ext.is_empty() { "png".to_string() } else { safe_ext };
