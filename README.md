@@ -241,6 +241,11 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 
 Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
 
+### v0.1.14 — pty PATH seeded from login shell
+
+- pty children now inherit the user's login-shell PATH, not the minimal PATH that macOS gives Finder-launched apps. Fixes "Native installation exists but ~/.local/bin is not in your PATH" warnings from claude code, and "1 MCP server failed" errors when an MCP server config points to `npx <something>` that wasn't reachable.
+- The PATH is queried once via `<shell> -lc 'echo $PATH'` (so user `.zshrc` / `.bashrc` customisations come through) and merged with a hardcoded fallback list so the app stays usable even on stripped-down systems.
+
 ### v0.1.13 — file tree + clickable paths
 
 - **Files subtab** under the project dashboard: lazy-loaded directory tree rooted at the project. Click a file to open in the OS default app, click a folder to expand inline. Skips `node_modules`, `.git`, `dist`, `target`, `.venv`, `__pycache__`, `.next`, `.cache`.

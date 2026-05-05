@@ -8,6 +8,7 @@
 
 use crate::store;
 use anyhow::Result;
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,55 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 use tauri::{Emitter, State};
+
+// Augmented PATH that mirrors what the user's login shell would have. Cached
+// once on first read since spawning a login shell is ~50-200 ms. Same fix
+// idea as resolve_command_path but for child processes claude itself spawns
+// (MCP servers via npx, the native installer's helper at ~/.local/bin, etc.)
+// - they all need PATH inherited via the pty's env, not the .app's minimal
+// PATH from launchd.
+static LOGIN_SHELL_PATH: Lazy<String> = Lazy::new(|| {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut dirs: Vec<String> = vec![
+        "/usr/local/bin".into(),
+        "/opt/homebrew/bin".into(),
+        "/usr/bin".into(),
+        "/bin".into(),
+        "/usr/sbin".into(),
+        "/sbin".into(),
+        format!("{home}/.npm-global/bin"),
+        format!("{home}/.local/bin"),
+        format!("{home}/.bun/bin"),
+        format!("{home}/Library/pnpm"),
+        format!("{home}/.volta/bin"),
+        format!("{home}/.cargo/bin"),
+    ];
+    // Ask the login shell what it actually has; merges any user-customised
+    // PATH from .zshrc / .bashrc that we wouldn't know about.
+    if let Ok(shell) = std::env::var("SHELL") {
+        if let Ok(out) = std::process::Command::new(&shell)
+            .args(["-lc", "echo $PATH"]).output()
+        {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                for entry in s.split(':') {
+                    if !entry.is_empty() && !dirs.iter().any(|d| d == entry) {
+                        dirs.push(entry.to_string());
+                    }
+                }
+            }
+        }
+    }
+    // Whatever the .app inherited from launchd - keep it, last priority.
+    if let Ok(existing) = std::env::var("PATH") {
+        for entry in existing.split(':') {
+            if !entry.is_empty() && !dirs.iter().any(|d| d == entry) {
+                dirs.push(entry.to_string());
+            }
+        }
+    }
+    dirs.join(":")
+});
 
 // Resolve `claude` (or any other binary installed via npm/brew/bun/volta) when
 // the .app is launched from Finder. macOS gives Finder-launched apps a minimal
@@ -140,6 +190,11 @@ fn spawn_inner(
     if let Some(cwd) = &args.cwd {
         cmd.cwd(cwd);
     }
+    // Seed PATH with the user's login-shell PATH so claude AND its
+    // children (MCP servers, the native installer's helper, etc.) can find
+    // npm/brew/bun/volta-installed binaries when the .app is launched from
+    // Finder. The frontend's optional env override wins on duplicate keys.
+    cmd.env("PATH", LOGIN_SHELL_PATH.as_str());
     if let Some(env) = &args.env {
         for (k, v) in env {
             cmd.env(k, v);
