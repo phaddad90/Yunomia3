@@ -24,6 +24,7 @@ import { writeToAgent } from './lib/mc-bridge.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { bootCheckForUpdates } from './lib/updater.js';
 import { getVersion } from '@tauri-apps/api/app';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 const AGENT_MODELS_DEFAULT = {
   LEAD:'claude-opus-4-7',
@@ -471,13 +472,10 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   // common extensions; left-click opens in OS default app, right-click
   // shows the same Open / Reveal / Copy menu the file tree uses.
   registerPathLinkProviders(term, cwd);
-  // Click in the terminal area routes focus back to the composer so the
-  // input target stays unambiguous. xterm.disableStdin is true so it
-  // wouldn't accept keystrokes anyway, but keeping focus on the composer
-  // means typing immediately works after you've inspected output.
-  termWrap.addEventListener('mousedown', () => {
-    setTimeout(() => { try { composerInput.focus(); } catch {} }, 0);
-  });
+  // Don't steal focus on terminal mousedown - that would break click-and-
+  // drag text selection in xterm. xterm.disableStdin is true so the
+  // terminal can't receive keystrokes anyway; let it handle its own
+  // selection + Cmd+C copy. Composer gets focus when explicitly clicked.
   // Mouse-wheel → scroll the terminal's scrollback. xterm normally hooks
   // wheel itself but the flex wrapper can swallow events; explicit listener
   // makes scrollback reliably reachable.
@@ -1369,6 +1367,30 @@ bindUi();
 
 // Git status + CI badge polling (60 s tick).
 startGitCiPolling(() => state.selectedProject);
+
+// Native file-drop listener. Tauri's webview gets file paths from the OS
+// here that the HTML5 dataTransfer API doesn't expose (WKWebView strips
+// them). When a file is dropped anywhere over the window, we insert the
+// real absolute path into the currently-active agent's composer. Images
+// pasted via clipboard still take the FileReader → clipboard-dir path
+// because those have no source file on disk.
+(async () => {
+  try {
+    const win = getCurrentWindow();
+    await win.onDragDropEvent((event) => {
+      if (event.payload?.type !== 'drop') return;
+      const paths = event.payload.paths || [];
+      if (paths.length === 0) return;
+      const active = state.ptys.get(state.activePane);
+      const target = active?.composer;
+      if (!target) return;
+      const lead = target.value && !target.value.endsWith('\n') ? '\n' : '';
+      const block = paths.map((p) => p).join('\n') + '\n';
+      insertAtCursor(target, lead + block);
+      target.dispatchEvent(new Event('input'));
+    });
+  } catch (e) { console.warn('file-drop listener', e); }
+})();
 
 // Populate the new-ticket type/audience dropdowns from this project's
 // taxonomy.json (Lead writes one during onboarding). Falls back to the

@@ -264,6 +264,14 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 
 Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
 
+### v0.1.21 — terminal copy works, real file paths on drop
+
+Two regressions from the v0.1.17 composer rewrite, both reported.
+
+- **Copy from terminal restored.** v0.1.17 added a `mousedown` handler on the terminal area that force-focused the composer, which broke xterm's click-and-drag selection cycle - the focus jumped before the drag finished. Removed; xterm handles its own selection + Cmd+C copy now (and never accepts keystrokes anyway because `disableStdin: true`).
+- **Drag-and-drop now inserts real file paths.** v0.1.17's HTML5 drop handler read each file via `FileReader`, copied a duplicate to `~/.yunomia/clipboard/`, and inserted *that* path. Correct for clipboard-pasted screenshots (no source file), wrong for real files dragged from Finder. v0.1.21 wires Tauri's `onDragDropEvent` at the window level - when a file is dropped over Yunomia, the actual filesystem paths from the OS get inserted into the active agent's composer. No copy, no rename, just the paths Claude can `Read` directly.
+- Image paste via clipboard (Cmd+V on a screenshot) is unchanged - that path still goes through `clipboard_image_save` because pasted images have no source file on disk.
+
 ### v0.1.20 — ad-hoc signing (drop Developer ID — Apple's codesign servers were the actual hang)
 
 v0.1.19 turned off Apple notarization but the build still stalled 21 min on the `codesign` step itself for the macOS ARM bundle. Reading the logs revealed it: `codesign` makes network calls to Apple's CRL / OCSP / timestamp authority servers when signing with a Developer ID cert, and those servers were timing out exactly like the notary queue. Same Apple-infrastructure black box, different door.
