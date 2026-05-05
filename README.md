@@ -237,6 +237,70 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 
 ---
 
+## Changelog
+
+Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
+
+### v0.1.13 — file tree + clickable paths
+
+- **Files subtab** under the project dashboard: lazy-loaded directory tree rooted at the project. Click a file to open in the OS default app, click a folder to expand inline. Skips `node_modules`, `.git`, `dist`, `target`, `.venv`, `__pycache__`, `.next`, `.cache`.
+- **Clickable file paths in xterm.** Absolute paths (`/Users/...`, `/home/...`, `/tmp/...`) and bare relative paths with common extensions become links. Cmd/Ctrl+click opens; right-click anywhere on a recognised path shows **Open / Reveal in Finder / Copy path**.
+- New `src-tauri/src/files.rs` module with `list_dir`, `open_path`, and `reveal_path` Tauri commands. `list_dir` validates that requested paths stay inside the project cwd.
+
+### v0.1.12 — VS Code-style composer
+
+- Real HTML textarea pinned below each agent pane. Enter sends; Shift+Enter inserts a newline (native textarea behaviour, no escape-sequence guessing).
+- Multi-line messages go to the pty as one bracketed-paste chunk (`\x1b[200~ … \x1b[201~\r`), so Claude Code's TUI sees one message with embedded newlines instead of multiple submissions.
+- Click on the terminal area itself to focus xterm directly when you need slash commands, Esc, or arrow-key passthrough.
+- Replaced the previous `attachCustomKeyEventHandler` shift+enter intercept which was producing visible artefacts.
+
+### v0.1.10 — Shift+Enter intercept + correct boot width
+
+- xterm's hidden textarea now gets focus on pane activation, click, and immediately after pty spawn, so the user's keystrokes actually reach the pty.
+- pty_spawn waits for layout to settle and runs `fit()` synchronously before spawning, so Claude Code's TUI knows the real terminal width from boot instead of being told later via TIOCSWINSZ (which doesn't repaint the box-drawing chrome).
+- Shipped manually via partial-publish fallback: macOS-aarch64, Windows, Linux. Apple notarization hung on Intel mac.
+
+### v0.1.8 — xterm focus calls
+
+- Three explicit `term.focus()` calls (pane activation, click on terminal, post-spawn). Before this, keystrokes after spawning Lead would land on the dashboard chrome instead of the pty.
+
+### v0.1.7 — Spawn-lead `ReferenceError` fix
+
+- `FOUNDER_KICKOFF` was declared `(projectName, projectPath, briefPath)` but the body referenced `${cwd}` four times, so every "Spawn lead agent" click threw `Can't find variable: cwd` before the pty even opened. This bug shipped in v0.1.0 through v0.1.6. v0.1.7 is the first build where Spawn lead actually works.
+
+### v0.1.6 — split build/publish CI workflow
+
+- Matrix jobs now bundle + sign + notarize only, then upload to per-platform Actions artifacts. A single `publish` job downloads everything, builds `latest.json`, and creates the GitHub Release in one shot.
+- Eliminates the parallel-write race on the release manifest that caused half the v0.1.5 jobs to fail with `Error updating policy`.
+
+### v0.1.5 — code/CI polish
+
+- Bundle identifier is now `io.yunomia.shell` (was `io.yunomia.app`; Apple recommends not ending with `.app`).
+- Dropped unused `anyhow!` import.
+
+### v0.1.2 — updater check returns tagged result
+
+- `bootCheckForUpdates` now returns `{kind: 'available' | 'none' | 'error'}` instead of returning `null` for both error and no-update. The earlier shape produced false "you're on the latest version" toasts when the updater request actually failed.
+
+### v0.1.1 — claude auto-resolve + first-run install gate
+
+- `claude` binary resolution walks 8 common install dirs (`/usr/local/bin`, `/opt/homebrew/bin`, `~/.npm-global/bin`, `~/.local/bin`, `~/.bun/bin`, `~/Library/pnpm`, `~/.volta/bin`, `~/.cargo/bin`), then falls back to asking the user's login shell via `<shell> -lc 'which claude'`. Without this, Finder-launched Yunomia couldn't find `claude` because macOS gives Finder apps a minimal PATH.
+- First-run install-gate modal blocks Spawn until `claude` is detected. New `claude_status` Tauri command returns `{found, path}`.
+- Better error surfacing: spawn errors now write into the xterm pane instead of failing silently.
+
+### v0.1.0 — initial public release
+
+- Tauri 2 desktop shell hosting one Claude Code pty per agent.
+- Project picker, onboarding (Lead-led interview, brief, agent fleet + ticket proposals, approval flow).
+- Seven-column kanban with side-panel editors, comments, schedule picker.
+- Bug Lessons archive with sentinel-file ingestion and bug-protocol compliance gate.
+- Per-agent kickoff/soul/pre-compact/reawaken markdown templates.
+- Heartbeat / on-assignment wakeup modes; auto-compact at 50% context.
+- Crash recovery via Claude Code session resume.
+- Signed builds for macOS Apple Silicon, macOS Intel, Windows, and Linux. Tauri auto-updater wired against the public GitHub Releases manifest.
+
+---
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).
