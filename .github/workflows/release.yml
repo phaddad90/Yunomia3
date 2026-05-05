@@ -89,11 +89,17 @@ jobs:
 
       - name: Build (Tauri)
         id: tauri
+        # Codesign with the Developer ID cert (so the updater's signature
+        # check passes + Gatekeeper recognises us), but DO NOT upload to
+        # Apple's notary service. Their queue routinely stalled the build
+        # 30-90 min while everything else finished in 4-6. First-launch UX
+        # on macOS becomes "right-click → Open" instead of "opens
+        # immediately"; that's the standard indie-devtool tradeoff and
+        # acceptable here. APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID are
+        # intentionally NOT exported - tauri-action skips notarization
+        # when those are absent.
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         uses: tauri-apps/tauri-action@v0

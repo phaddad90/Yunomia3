@@ -35,9 +35,13 @@ A multi-agent orchestration shell for any project. Open Yunomia, point it at a f
 
 ### macOS (Apple Silicon)
 
-Grab the latest signed `.dmg` from [Releases](https://github.com/phaddad90/Yunomia3/releases). Drag Yunomia.app into Applications. The app is signed and notarized so it opens normally on first launch.
+Grab the latest `.dmg` from [Releases](https://github.com/phaddad90/Yunomia3/releases). Drag Yunomia.app into Applications.
 
-> macOS Intel is no longer built. Apple stopped selling Intel Macs in 2020; the Intel build also routinely stalled in Apple's notarization queue. If you need Intel, the source builds clean on x86_64 — clone and `cargo tauri build --target x86_64-apple-darwin`.
+**First launch:** macOS may show "Yunomia.app cannot be opened because the developer cannot be verified" — that's Gatekeeper because we no longer pay the toll for Apple's notary queue (it stalled our builds 30–90 min). Right-click Yunomia.app → **Open** → confirm the prompt. macOS remembers, future launches open normally. Auto-updates also bypass this prompt. Alternatively: System Settings → Privacy & Security → "Open Anyway" after first attempt.
+
+The app IS still codesigned with our Developer ID cert — Apple just hasn't co-signed the malware scan ticket. The updater's cryptographic signature check (separate from notarization) is unchanged and verifies every download.
+
+> macOS Intel is no longer built. Apple stopped selling Intel Macs in 2020. If you need Intel, the source builds clean on x86_64 — clone and `cargo tauri build --target x86_64-apple-darwin`.
 
 ### Windows
 
@@ -259,6 +263,17 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 ## Changelog
 
 Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
+
+### v0.1.19 — drop Apple notarization (4× faster releases)
+
+The v0.1.18 build still hung 44+ min on Apple notarization for the ARM bundle. Apple's notary service is a black-box queue that randomly stalls bundles for 30–90 min. ARM vs Intel never mattered — same queue. We were paying a 60-min variance toll on every release.
+
+- macOS bundles are still **codesigned** with our Developer ID cert (Gatekeeper sees a real developer; the updater's signature check is unchanged).
+- We no longer **upload to Apple's notary service**, which means no malware-scan ticket gets stapled.
+- Concrete impact: tag → published release goes from "hopeful 15 min, regular 60+ min hangs" to deterministic 4–6 min.
+- First-launch UX on macOS changes from "opens immediately" to a one-time right-click → Open prompt (the standard indie devtool experience). Future launches and auto-updates open normally.
+
+If we ever decide to re-enable notarization in the future, just restore `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` to the build step env. Tauri-action picks them back up and notarizes automatically.
 
 ### v0.1.18 — drop macOS Intel from the release matrix
 
