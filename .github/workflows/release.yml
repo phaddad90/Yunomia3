@@ -34,10 +34,6 @@ jobs:
             args: '--target aarch64-apple-darwin'
             artifact_name: 'macos-aarch64'
             arch_suffix: 'aarch64'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
-            artifact_name: 'macos-x86_64'
-            arch_suffix: 'x64'
           - platform: 'ubuntu-22.04'
             args: ''
             artifact_name: 'linux-x86_64'
@@ -46,6 +42,10 @@ jobs:
             args: ''
             artifact_name: 'windows-x86_64'
             arch_suffix: ''
+          # macOS Intel (x86_64) dropped in v0.1.18: Apple Silicon launched
+          # in 2020, no Intel macs sold since, and Apple's notarization
+          # queue routinely stalled the Intel build for 40+ min while ARM,
+          # Linux, and Windows all finished in 8-12 min. Not worth the wait.
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -56,7 +56,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
       - name: Cache cargo target
         uses: Swatinem/rust-cache@v2

@@ -2,7 +2,7 @@
 
 A multi-agent orchestration shell for any project. Open Yunomia, point it at a folder, talk to a Lead agent about your goals, and it will scope the work, propose an agent fleet, and file the initial tickets. From there you have one window with a kanban, ticket inbox, bug-lessons archive, activity feed, and a real Claude Code session per agent. Everything is per-project and file-backed locally.
 
-> Built on Tauri 2 + portable-pty + xterm.js. Vanilla JS frontend, no framework. macOS Apple Silicon, macOS Intel, Windows, and Linux binaries.
+> Built on Tauri 2 + portable-pty + xterm.js. Vanilla JS frontend, no framework. macOS Apple Silicon, Windows, and Linux binaries.
 
 ---
 
@@ -33,9 +33,11 @@ A multi-agent orchestration shell for any project. Open Yunomia, point it at a f
 
 ## Install
 
-### macOS (Apple Silicon and Intel)
+### macOS (Apple Silicon)
 
 Grab the latest signed `.dmg` from [Releases](https://github.com/phaddad90/Yunomia3/releases). Drag Yunomia.app into Applications. The app is signed and notarized so it opens normally on first launch.
+
+> macOS Intel is no longer built. Apple stopped selling Intel Macs in 2020; the Intel build also routinely stalled in Apple's notarization queue. If you need Intel, the source builds clean on x86_64 — clone and `cargo tauri build --target x86_64-apple-darwin`.
 
 ### Windows
 
@@ -257,6 +259,12 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 ## Changelog
 
 Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
+
+### v0.1.18 — drop macOS Intel from the release matrix
+
+- Build matrix no longer includes `--target x86_64-apple-darwin`. Apple stopped selling Intel Macs in 2020, the Intel notarization queue stalled every other release for 40+ min while ARM/Linux/Windows finished in under 12, and the partial-publish fallback we'd been doing was just papering over a config that had outlived its purpose.
+- Releases are now mac-arm64 + windows-x64 + linux-x64. Expected wall-clock for a tag → published release: ~10-15 min, no more 90 min Intel hangs.
+- Source still builds for x86_64 if anyone genuinely needs it: `cargo tauri build --target x86_64-apple-darwin`.
 
 ### v0.1.17 — single composer input, image paste, drag-drop
 
