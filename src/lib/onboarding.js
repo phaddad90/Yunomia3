@@ -42,43 +42,52 @@ onboarding interview. You will:
    Use the Write tool to update the file. Update incrementally, don't wait
    for the full interview to finish.
 
-3. When you and the user agree the brief is solid, write TWO machine-readable
-   proposal files (not just a markdown section):
+3. When you and the user agree the brief is solid, write THREE
+   machine-readable files into the project's .yunomia/ directory. Use the
+   Write tool. Use these EXACT absolute paths:
 
-   FILE A - ${cwd}/.yunomia-proposals/proposed-agents.json (note: actually
-   written to ~/.yunomia/projects/<sanitised>/proposed-agents.json - Yunomia
-   reads from there). Schema:
+   FILE A - ${cwd}/.yunomia/proposed-agents.json. Schema:
 
      [
-       { "code": "CEO",  "model": "claude-opus-4-7",  "reason": "orchestrator",       "wakeup_mode": "heartbeat" },
-       { "code": "SA",   "model": "claude-sonnet-4-6","reason": "backend + db",      "wakeup_mode": "on-assignment" },
-       { "code": "QA",   "model": "claude-haiku-4-5-20251001", "reason": "verifications","wakeup_mode": "on-assignment" }
+       { "code": "CEO",  "model": "claude-opus-4-7",          "reason": "orchestrator - breaks epics into tickets, assigns work, monitors progress", "wakeup_mode": "heartbeat" },
+       { "code": "SA",   "model": "claude-sonnet-4-6",        "reason": "backend + DB schema + core domain logic",                                   "wakeup_mode": "on-assignment" },
+       { "code": "QA",   "model": "claude-haiku-4-5-20251001","reason": "verifications and acceptance tests",                                        "wakeup_mode": "on-assignment" }
      ]
 
-   wakeup_mode: "heartbeat" for orchestrators that should wake on a cron;
+   wakeup_mode: "heartbeat" for orchestrators that wake on a cron;
    "on-assignment" for workers that wake only when given a ticket.
 
-   FILE B - proposed-tickets.json. Schema:
+   FILE B - ${cwd}/.yunomia/proposed-tickets.json. Schema:
 
      [
-       { "title": "Schema migration for orders", "body_md": "…", "type": "migration", "audience": "admin", "assignee_agent": "SA" },
-       { "title": "Login flow E2E test",          "body_md": "…", "type": "feature",   "audience": "app",   "assignee_agent": "QA" }
+       { "title": "Schema migration for orders", "body_md": "<full description>", "type": "migration", "audience": "admin", "assignee_agent": "SA" },
+       { "title": "Login flow E2E test",         "body_md": "<full description>", "type": "feature",   "audience": "app",   "assignee_agent": "QA" }
      ]
 
-   Use the Write tool to create both files. Paths are relative to:
-   ~/.yunomia/projects/<sanitised-cwd>/
+   FILE C - ${cwd}/.yunomia/taxonomy.json. Defines project-specific ticket
+   types and audiences so the kanban dropdowns reflect THIS project, not
+   generic placeholders. Schema:
 
-   Where <sanitised-cwd> = the project path with / replaced by - and spaces
-   replaced by _. For this project the sanitised path is:
-   ${cwd.trim().replace(/^\//,'').replace(/\//g,'-').replace(/ /g,'_')}
+     {
+       "audiences":   ["office", "stations", "external"],
+       "ticket_types":["ingestion", "routing", "shipping", "ui", "bug"]
+     }
 
-   So the absolute paths are:
-   ~/.yunomia/projects/${cwd.trim().replace(/^\//,'').replace(/\//g,'-').replace(/ /g,'_')}/proposed-agents.json
-   ~/.yunomia/projects/${cwd.trim().replace(/^\//,'').replace(/\//g,'-').replace(/ /g,'_')}/proposed-tickets.json
+   Pick audiences and types that fit the brief. Always include "bug" in
+   ticket_types so the bug-protocol gate works. Make sure assignee_agent
+   values in FILE B match codes in FILE A.
 
-   Don't create agents or tickets via any other method. Yunomia ingests
-   these files when the user clicks Approve. You can rewrite either file
-   anytime - the user always sees the latest before approving.
+   Yunomia ingests FILES A + B when the user clicks Approve, then auto-
+   scaffolds per-agent kickoff/soul/pre-compact/reawaken markdown files in
+   ${cwd}/.yunomia/agents/<CODE>/, and auto-spawns the heartbeat agents.
+
+   IMPORTANT - common failure modes to avoid:
+   - Don't write FILE A and skip FILE B (operator gets agents but no work).
+   - Don't claim "I'll write 15 tickets" then submit only 3.
+   - Don't write to legacy paths under ~/.yunomia/. Write to .yunomia/ in
+     the project root - that's where Yunomia v0.1.16+ reads from.
+   - You can rewrite any file before approve; the operator always sees
+     fresh counts.
 
 4. Be a real lead, not a yes-bot:
    - Push back when scope is fuzzy.
@@ -195,14 +204,26 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
   const approveBtn = container.querySelector('#onb-approve');
   if (approveBtn) {
     approveBtn.addEventListener('click', async () => {
-      // Ingest Lead's proposals if present.
       let proposals = { tickets: [], agents: [] };
       try { proposals = await invoke('proposals_read', { args: { cwd } }); } catch {}
-      let summary = `Approve brief for "${projectName}" and go active?`;
-      if (proposals.tickets.length || proposals.agents.length) {
-        summary += `\n\nLead proposed ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s). These will be created automatically.`;
+
+      // Loud validation: refuse to silently approve with 0 tickets when
+      // Lead claimed to write some. Show counts up-front.
+      const summary = [
+        `Approve brief for "${projectName}" and switch to active mode?`,
+        '',
+        `Found in proposed-tickets.json: ${proposals.tickets.length} ticket(s)`,
+        `Found in proposed-agents.json: ${proposals.agents.length} agent(s)`,
+        '',
+      ];
+      if (proposals.tickets.length === 0) {
+        summary.push('⚠ No tickets proposed. Lead may have skipped writing the file.');
+        summary.push('   You can still approve - tickets can be added manually later.');
+        summary.push('');
       }
-      if (!confirm(summary)) return;
+      summary.push('Continue?');
+      if (!confirm(summary.join('\n'))) return;
+
       for (const pt of proposals.tickets) {
         try {
           await invoke('tickets_create', { args: { cwd,
@@ -215,6 +236,13 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
           }});
         } catch (err) { console.warn('proposed ticket create failed', err); }
       }
+
+      // Snapshot the brief once; we'll use a trimmed excerpt to seed each
+      // agent's auto-scaffolded kickoff so they boot with project context.
+      let briefText = '';
+      try { briefText = await invoke('brief_get', { args: { cwd } }) || ''; } catch {}
+      const briefExcerpt = briefText.length > 1500 ? briefText.slice(0, 1500) + '\n\n…' : briefText;
+
       if (proposals.agents.length) {
         const agents = proposals.agents.map((a) => ({
           code: a.code,
@@ -224,20 +252,38 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
           note: a.reason || null,
         }));
         try { await invoke('project_agents_upsert', { args: { cwd, agents } }); } catch {}
+
+        // Scaffold per-agent kickoff/soul/pre-compact/reawaken so auto-spawned
+        // agents boot with role identity instead of being a blank Claude
+        // session in the same cwd as Lead.
+        for (const a of proposals.agents) {
+          try {
+            await invoke('agent_files_scaffold', { args: {
+              cwd,
+              code: a.code,
+              role: a.reason || `${a.code} agent`,
+              projectName,
+              briefExcerpt,
+            }});
+          } catch (err) { console.warn('scaffold failed', a.code, err); }
+        }
       }
       try { await invoke('proposals_clear', { args: { cwd } }); } catch {}
-      // Auto-spawn the proposed heartbeat agents (orchestrators) so they
-      // come up live. on-assignment workers stay dormant until a ticket lands.
+
+      // Auto-spawn the proposed heartbeat agents (orchestrators).
+      // on-assignment workers stay dormant until a ticket lands.
       const heartbeatAgents = (proposals.agents || []).filter((a) =>
         (a.wakeup_mode || (a.code === 'LEAD' || a.code === 'CEO' ? 'heartbeat' : 'on-assignment')) === 'heartbeat'
       );
       for (const a of heartbeatAgents) {
-        if (a.code === 'LEAD') continue;   // Lead is already running
+        if (a.code === 'LEAD') continue;
         try {
           await spawnAgent(a.code, a.model || 'claude-sonnet-4-6', cwd, {});
         } catch (err) { console.warn('auto-spawn failed', a.code, err); }
       }
       await approveBrief(cwd);
+      // Final summary - what actually happened.
+      alert(`Approved.\n\nCreated: ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s).\nAuto-spawned ${heartbeatAgents.filter((a) => a.code !== 'LEAD').length} heartbeat agent(s).`);
       onApproved && onApproved();
       return;
     });

@@ -160,28 +160,62 @@ pub struct ContextEstimate {
 #[derive(Deserialize)]
 pub struct ContextEstimateArgs {
     pub cwd: String,
+    // Optional. When provided, look up this agent's recorded session_id in
+    // operator/agent-sessions.json and read THAT specific JSONL. Without it
+    // we fall back to the newest JSONL in the project's claude-code dir,
+    // which is wrong when multiple agents share a cwd (LEAD + CEO both
+    // showing identical context %).
+    pub agent_code: Option<String>,
 }
 
 const CONTEXT_WINDOW_TOKENS: u64 = 200_000;
 
+fn claude_project_dir(cwd: &str) -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let sanitised = cwd.trim_start_matches('/').replace('/', "-").replace('.', "-");
+    Ok(PathBuf::from(&home).join(".claude").join("projects").join(format!("-{}", sanitised)))
+}
+
+fn yunomia_project_op_dir(cwd: &str) -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let sanitised = cwd.trim_start_matches('/').replace('/', "-").replace(' ', "_");
+    Ok(PathBuf::from(&home).join(".yunomia").join("projects").join(sanitised))
+}
+
+fn agent_session_lookup(cwd: &str, agent_code: &str) -> Option<String> {
+    let path = yunomia_project_op_dir(cwd).ok()?.join("agent-sessions.json");
+    if !path.exists() { return None; }
+    let raw = fs::read_to_string(&path).ok()?;
+    let map: std::collections::HashMap<String, String> = serde_json::from_str(&raw).ok()?;
+    map.get(agent_code).cloned()
+}
+
 #[tauri::command]
 pub fn agent_context_estimate(args: ContextEstimateArgs) -> Result<Option<ContextEstimate>, String> {
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let sanitised = args.cwd.trim_start_matches('/').replace('/', "-").replace('.', "-");
-    let proj_dir = PathBuf::from(&home).join(".claude").join("projects").join(format!("-{}", sanitised));
+    let proj_dir = claude_project_dir(&args.cwd)?;
     if !proj_dir.exists() { return Ok(None); }
-    // Pick the newest jsonl file.
-    let mut newest: Option<(PathBuf, std::time::SystemTime, u64)> = None;
-    for entry in fs::read_dir(&proj_dir).map_err(|e| e.to_string())?.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("jsonl") { continue; }
-        let meta = match entry.metadata() { Ok(m) => m, Err(_) => continue };
-        let modified = match meta.modified() { Ok(m) => m, Err(_) => continue };
-        let len = meta.len();
-        let take = newest.as_ref().map(|(_, t, _)| modified > *t).unwrap_or(true);
-        if take { newest = Some((path, modified, len)); }
-    }
-    let (path, _, bytes) = match newest { Some(x) => x, None => return Ok(None) };
+    // If we have an explicit session for this agent, read THAT JSONL only.
+    let recorded_session = args.agent_code.as_deref().and_then(|c| agent_session_lookup(&args.cwd, c));
+    let (path, bytes) = if let Some(sid) = &recorded_session {
+        let p = proj_dir.join(format!("{}.jsonl", sid));
+        if !p.exists() { return Ok(None); }
+        let len = p.metadata().map_err(|e| e.to_string())?.len();
+        (p, len)
+    } else {
+        // Fallback: pick the newest jsonl. Used for the resume banner and
+        // pre-v0.1.16 spawns that never recorded a session.
+        let mut newest: Option<(PathBuf, std::time::SystemTime, u64)> = None;
+        for entry in fs::read_dir(&proj_dir).map_err(|e| e.to_string())?.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("jsonl") { continue; }
+            let meta = match entry.metadata() { Ok(m) => m, Err(_) => continue };
+            let modified = match meta.modified() { Ok(m) => m, Err(_) => continue };
+            let len = meta.len();
+            let take = newest.as_ref().map(|(_, t, _)| modified > *t).unwrap_or(true);
+            if take { newest = Some((path, modified, len)); }
+        }
+        match newest { Some((p, _, b)) => (p, b), None => return Ok(None) }
+    };
     let session_id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
     // Prefer stats hook output when present.
     let stats_path = proj_dir.join(format!("{}-stats.json", session_id));
@@ -210,6 +244,61 @@ pub fn agent_context_estimate(args: ContextEstimateArgs) -> Result<Option<Contex
         percent,
         source: "jsonl-bytes".into(),
     }))
+}
+
+// Pin an agent's claude-code session id so future context queries read from
+// THAT JSONL, not just the newest file in cwd. Called from the frontend a
+// few seconds after pty_spawn returns: we snapshot what JSONLs exist now
+// and watch for the next one to appear (claude-code creates a new JSONL
+// when the session begins streaming). The frontend passes either an
+// explicit session_id (if it parsed it from the pty output) or null to
+// trigger discovery: pick the newest JSONL whose mtime is after the spawn
+// timestamp.
+#[derive(Deserialize)]
+pub struct AgentSessionRecordArgs {
+    pub cwd: String,
+    pub agent_code: String,
+    pub session_id: Option<String>,
+    pub since_ms: Option<i64>,         // epoch ms; ignored if session_id given
+}
+
+#[tauri::command]
+pub fn agent_session_record(args: AgentSessionRecordArgs) -> Result<String, String> {
+    let session_id = if let Some(sid) = args.session_id.filter(|s| !s.is_empty()) {
+        sid
+    } else {
+        // Discovery path: scan claude-code's project dir for the newest JSONL
+        // whose mtime is after `since_ms` (i.e. created since this agent spawned).
+        let proj_dir = claude_project_dir(&args.cwd)?;
+        if !proj_dir.exists() { return Err("no claude-code project dir yet; spawn hasn't materialised".into()); }
+        let since = args.since_ms.unwrap_or(0);
+        let mut newest: Option<(PathBuf, i64)> = None;
+        for entry in fs::read_dir(&proj_dir).map_err(|e| e.to_string())?.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("jsonl") { continue; }
+            let mtime_ms = entry.metadata().ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            if mtime_ms < since { continue; }
+            let take = newest.as_ref().map(|(_, t)| mtime_ms > *t).unwrap_or(true);
+            if take { newest = Some((path, mtime_ms)); }
+        }
+        let path = newest.ok_or_else(|| "no JSONL found newer than the spawn timestamp; did the agent get any output yet?".to_string())?.0;
+        path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()
+    };
+    if session_id.is_empty() { return Err("derived session_id was empty".into()); }
+    let op_dir = yunomia_project_op_dir(&args.cwd)?;
+    fs::create_dir_all(&op_dir).map_err(|e| e.to_string())?;
+    let path = op_dir.join("agent-sessions.json");
+    let mut map: std::collections::HashMap<String, String> = if path.exists() {
+        fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+    } else { std::collections::HashMap::new() };
+    map.insert(args.agent_code, session_id.clone());
+    let raw = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
+    fs::write(&path, raw).map_err(|e| e.to_string())?;
+    Ok(session_id)
 }
 
 // Delete a Claude Code session file (the JSONL conversation history). Used

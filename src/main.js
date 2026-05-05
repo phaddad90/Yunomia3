@@ -114,6 +114,7 @@ function bindProjectPicker() {
     void window.__renderProjectView?.();
     void refreshGit(state.selectedProject);
     void refreshCi(state.selectedProject);
+    void window.__applyTaxonomy?.();
   });
 }
 
@@ -270,7 +271,7 @@ async function refreshContextStats() {
   for (const [, ent] of state.ptys.entries()) {
     if (ent.exited) continue;
     try {
-      const est = await invoke('agent_context_estimate', { args: { cwd: ent.cwd } });
+      const est = await invoke('agent_context_estimate', { args: { cwd: ent.cwd, agentCode: ent.code } });
       ent.contextEstimate = est || null;
       // Auto-compact at 50% when idle.
       if (est && ent.cwd === state.selectedProject) {
@@ -470,11 +471,23 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   if (opts.resume) args.push('--resume', opts.resume);
   // Spawn the actual claude process with composite key as pty id.
   try {
+    const spawnedAt = Date.now();
     await invoke('pty_spawn', {
       args: { id: key, command: 'claude', args, cwd, env: null, cols: term.cols, rows: term.rows },
     });
     // Hand keyboard focus to the composer so the user can just start typing.
     setTimeout(() => { try { composerInput.focus(); } catch {} }, 100);
+    // Pin this agent's claude-code session_id so context % is per-agent
+    // instead of "newest jsonl in cwd". claude-code creates the JSONL after
+    // the first user/system event lands, so wait a few seconds before
+    // discovery.
+    if (code !== 'LEAD' || true) {
+      setTimeout(async () => {
+        try {
+          await invoke('agent_session_record', { args: { cwd, agentCode: code, sessionId: opts.resume || null, sinceMs: spawnedAt - 5000 } });
+        } catch (e) { /* often fires on first spawn before claude-code has written; ok */ }
+      }, 5000);
+    }
   } catch (e) {
     // Surface the error inside the xterm pane so it's not a silent black box.
     const msg = String(e?.message || e);
@@ -955,6 +968,63 @@ async function renderProjectView() {
         await renderProjectView();
       });
     }
+    const reingestBtn = document.getElementById('proposals-reingest');
+    if (reingestBtn && !reingestBtn.dataset.bound) {
+      reingestBtn.dataset.bound = '1';
+      reingestBtn.addEventListener('click', async () => {
+        const cwdNow = state.selectedProject;
+        if (!cwdNow) return;
+        let proposals = { tickets: [], agents: [] };
+        try { proposals = await invoke('proposals_read', { args: { cwd: cwdNow } }); }
+        catch (e) { alert(`Couldn't read proposals: ${e}`); return; }
+        if (!proposals.tickets.length && !proposals.agents.length) {
+          alert('No proposed-tickets.json / proposed-agents.json found for this project.\n\nLead writes these to <cwd>/.yunomia/. If your Lead claims it wrote tickets, ask it to re-write them to that exact path.');
+          return;
+        }
+        if (!confirm(`Found ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s) to ingest. Continue?`)) return;
+        let createdTickets = 0;
+        for (const pt of proposals.tickets) {
+          try {
+            await invoke('tickets_create', { args: {
+              cwd: cwdNow,
+              title: pt.title || '(untitled)',
+              bodyMd: pt.body_md || '',
+              type: pt.type || 'feature',
+              status: 'triage',
+              audience: pt.audience || 'admin',
+              assigneeAgent: pt.assignee_agent || null,
+            }});
+            createdTickets += 1;
+          } catch (e) { console.warn('reingest ticket create failed', e); }
+        }
+        if (proposals.agents.length) {
+          const agents = proposals.agents.map((a) => ({
+            code: a.code,
+            model: a.model || 'claude-sonnet-4-6',
+            wakeup_mode: a.wakeup_mode || (a.code === 'LEAD' || a.code === 'CEO' ? 'heartbeat' : 'on-assignment'),
+            heartbeat_min: 60,
+            note: a.reason || null,
+          }));
+          try { await invoke('project_agents_upsert', { args: { cwd: cwdNow, agents } }); } catch {}
+          let briefText = '';
+          try { briefText = await invoke('brief_get', { args: { cwd: cwdNow } }) || ''; } catch {}
+          const briefExcerpt = briefText.length > 1500 ? briefText.slice(0, 1500) + '\n\n…' : briefText;
+          for (const a of proposals.agents) {
+            try {
+              await invoke('agent_files_scaffold', { args: {
+                cwd: cwdNow, code: a.code,
+                role: a.reason || `${a.code} agent`,
+                projectName: projState.project_name || projectLabel(cwdNow),
+                briefExcerpt,
+              }});
+            } catch (e) { console.warn('scaffold failed', a.code, e); }
+          }
+        }
+        try { await invoke('proposals_clear', { args: { cwd: cwdNow } }); } catch {}
+        alert(`Ingested ${createdTickets} ticket(s) + ${proposals.agents.length} agent(s). Kanban will refresh.`);
+        await renderProjectView();
+      });
+    }
   }
   // Dashboard tab badge: open ticket count for the current project.
   setTimeout(() => {
@@ -1227,6 +1297,31 @@ bindUi();
 
 // Git status + CI badge polling (60 s tick).
 startGitCiPolling(() => state.selectedProject);
+
+// Populate the new-ticket type/audience dropdowns from this project's
+// taxonomy.json (Lead writes one during onboarding). Falls back to the
+// generic default served by the rust side if no file exists.
+async function applyTaxonomyToForms() {
+  const cwd = state.selectedProject;
+  if (!cwd) return;
+  let tax;
+  try { tax = await invoke('taxonomy_get', { args: { cwd } }); } catch { return; }
+  const typeSel = document.getElementById('nt-type');
+  const audSel  = document.getElementById('nt-audience');
+  if (typeSel && Array.isArray(tax?.ticket_types) && tax.ticket_types.length) {
+    const current = typeSel.value;
+    typeSel.innerHTML = tax.ticket_types.map((t) =>
+      `<option value="${escapeHtmlAttr(t)}"${t === current ? ' selected' : ''}>${escapeHtmlAttr(t)}</option>`).join('');
+  }
+  if (audSel && Array.isArray(tax?.audiences) && tax.audiences.length) {
+    const current = audSel.value;
+    audSel.innerHTML = tax.audiences.map((a) =>
+      `<option value="${escapeHtmlAttr(a)}"${a === current ? ' selected' : ''}>${escapeHtmlAttr(a)}</option>`).join('');
+  }
+}
+function escapeHtmlAttr(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+window.__applyTaxonomy = applyTaxonomyToForms;
+applyTaxonomyToForms();
 
 // PH-134 Phase 2 - bridge to MC + auto-compact orchestrator.
 void initCompactOrchestrator();

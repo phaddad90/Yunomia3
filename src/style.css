@@ -179,6 +179,13 @@ body {
 }
 .ctx-menu-item:hover { background: var(--surface-2); }
 
+/* Project actions row (above the subtabs, always-visible) */
+.project-actions {
+  display: flex; gap: 8px; padding: 6px 12px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.project-actions button { font-size: 12px; padding: 4px 10px; }
+
 /* Topbar git + CI badges */
 .git-badge, .ci-badge {
   display: inline-flex; align-items: center; gap: 4px;

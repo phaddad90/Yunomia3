@@ -37,8 +37,11 @@
           <details id="brief-panel" class="brief-panel">
             <summary>📋 Project brief - <span id="brief-name"></span></summary>
             <pre id="brief-content"></pre>
-            <button id="brief-reopen" class="btn-ghost" type="button">Re-open onboarding</button>
           </details>
+          <div class="project-actions">
+            <button id="brief-reopen" class="btn-ghost" type="button" title="Re-open onboarding (kanban hides until you re-approve the brief)">↺ Re-open onboarding</button>
+            <button id="proposals-reingest" class="btn-ghost" type="button" title="Re-read Lead's proposed-tickets.json / proposed-agents.json and ingest any tickets / agents that weren't picked up at approve time">⤓ Re-ingest proposals</button>
+          </div>
           <nav class="subtabs" id="subtabs">
             <button class="subtab active" data-sub="kanban">Kanban</button>
             <button class="subtab" data-sub="activity">Activity</button>

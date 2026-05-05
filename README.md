@@ -148,22 +148,37 @@ The schema for the sentinel file is documented in every agent's default `kickoff
 
 ## State on disk
 
-Everything Yunomia writes lives at `~/.yunomia/projects/<sanitised-cwd>/`:
+State is split between the project folder (artifacts you'd want in git) and the operator's home (private to your machine).
+
+**`<cwd>/.yunomia/`** — project artifacts, intended to be git-committed:
 
 ```
-agents/<CODE>/{kickoff,goals,soul,pre-compact,reawaken}.md
-agents.json              project roster
-audit.json               transition / comment / lesson log
 brief.md                 canonical project scope (Lead writes here)
+agents.json              project roster
+agents/<CODE>/{kickoff,soul,pre-compact,reawaken}.md   per-agent identity
+lessons.json             Bug Lessons (BL-NNN)
+taxonomy.json            project-specific audiences + ticket types
+tickets.json             all tickets
 comments.json            ticket comments
+schedules.json           scheduled_for per ticket
+prefix.txt               3-letter ticket id prefix
+counter.txt              monotonic ticket counter
+proposed-tickets.json    Lead's draft tickets (transient, ingested on approve)
+proposed-agents.json     Lead's proposed fleet (transient)
+```
+
+**`~/.yunomia/projects/<sanitised-cwd>/`** — operator-local, not committed:
+
+```
+state.json               project lifecycle (onboarding / active)
+audit.json               transition / comment / lesson log
 inbox.json               notification queue
 kill-switch.json         compliance kill-switch state
-lessons.json             Bug Lessons (BL-NNN)
+agent-sessions.json      agent_code → claude-code session_id
+agent-proposal.json      Lead's mid-project agent proposals (transient)
 pending-lessons/         agent-written lesson sentinels (auto-ingested)
-prefix.txt               3-letter ticket id prefix derived from project name
-schedules.json           scheduled_for per ticket
-state.json               project lifecycle (onboarding / active)
-tickets.json             all tickets
+credentials.json         credential names + types (values live in OS keychain)
+deploys.json             deploy targets
 ```
 
 Plus globally:
@@ -173,7 +188,7 @@ Plus globally:
 ~/.yunomia/pty-audit-<CODE>.log  every byte Yunomia wrote to each agent's stdin
 ```
 
-`<sanitised-cwd>` is the absolute path with `/` replaced by `-` and spaces replaced by `_`.
+`<sanitised-cwd>` is the absolute path with `/` replaced by `-` and spaces replaced by `_`. On first launch after upgrade, public files in the operator dir migrate to `<cwd>/.yunomia/` automatically.
 
 ---
 
@@ -242,6 +257,18 @@ v3 is still in active development. Compliance UI consumption, per-rule kill-swit
 ## Changelog
 
 Newest first. Skipped numbers (v0.1.3, v0.1.4, v0.1.9, v0.1.11) were CI dry-runs that never published — they got superseded mid-build by the next tag.
+
+### v0.1.16 — project-folder storage, agent kickoffs, per-agent context, taxonomy
+
+Big architectural change plus a cluster of fixes for issues that surfaced during real onboarding runs.
+
+- **Project artifacts now live in `<cwd>/.yunomia/`.** Brief, agents config, agent kickoff/soul/pre-compact/reawaken markdown, lessons, tickets, comments, schedules, taxonomy, prefix, counter — all of it lives in a `.yunomia/` directory in your project root, intended to be committed to git. Migration runs automatically the first time a project is touched after upgrade. Operator state (state.json, audit.json, inbox.json, kill-switch.json, pty audit logs, agent-session map, pending-lessons sentinels) stays in `~/.yunomia/projects/<sanitised>/`.
+- **Auto-scaffold per-agent kickoffs on Approve.** When you approve the brief, every agent in `proposed-agents.json` gets a `agents/<CODE>/{kickoff,soul,pre-compact,reawaken}.md` written automatically. Kickoffs include the project name, role from Lead's `reason` field, a 1.5KB excerpt from `brief.md`, and the bug protocol. Auto-spawned heartbeat agents (CEO etc.) now boot with full role identity instead of being a blank Claude session in the same cwd as Lead.
+- **Per-agent context %.** Spawn snapshots the timestamp; ~5 s later we discover which JSONL claude-code created and pin it as the agent's `session_id` in `agent-sessions.json`. Future context-% queries use that specific JSONL, not "the newest in cwd". Fixes the "LEAD and CEO show identical 20%" illusion.
+- **Customisable taxonomy.** Lead writes `taxonomy.json` during onboarding listing the project's audiences and ticket types. The new-ticket dropdowns render from this file at project switch time. Falls back to a generic `[product, ops, internal] × [feature, bug, doc, ops, migration, gate]` if missing. Removes the PrintPepper-specific `admin/app` baggage permanently.
+- **Approve-time validation.** The Approve modal now shows the actual counts found in `proposed-tickets.json` and `proposed-agents.json`, with a loud warning if tickets is 0 (the "Lead claimed 15 tickets but wrote 0" failure mode). After approve, a final summary tells you exactly what was created.
+- **Discoverable "Re-open onboarding" + "Re-ingest proposals".** Both buttons now live in a project-actions row above the subtabs, always visible. The re-ingest button reads the proposals files again (e.g. after asking Lead to re-write its missing tickets file) and ingests anything new without flipping the project back to onboarding mode.
+- **Updated Lead kickoff prompt.** Tells Lead to write to `<cwd>/.yunomia/proposed-*.json` (not the legacy operator path), to write a `taxonomy.json`, and explicitly warns against the failure modes Lead has actually hit (claiming N tickets but writing 0, writing one file and skipping another).
 
 ### v0.1.15 — credentials, deploys, git/CI
 

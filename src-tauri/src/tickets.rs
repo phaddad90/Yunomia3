@@ -1,13 +1,17 @@
 // Yunomia - file-backed per-project ticket store. Self-contained, no external API.
 //
-// Layout:
-//   ~/.yunomia/projects/<sanitised-cwd>/tickets.json
-//   ~/.yunomia/projects/<sanitised-cwd>/comments.json
-//   ~/.yunomia/projects/<sanitised-cwd>/audit.json
-//   ~/.yunomia/projects/<sanitised-cwd>/counter.txt    (per-project monotonic ticket number)
-//   ~/.yunomia/projects/<sanitised-cwd>/prefix.txt     (per-project 3-letter prefix, e.g. "ERP")
+// Storage split (v0.1.16+):
+//   <cwd>/.yunomia/                                            ← project artifacts, git-committed
+//     brief.md, agents.json, agents/<CODE>/*.md, taxonomy.json,
+//     tickets.json, comments.json, lessons.json, schedules.json,
+//     counter.txt, prefix.txt, proposed-*.json (transient)
+//   ~/.yunomia/projects/<sanitised-cwd>/                       ← operator-local, never committed
+//     state.json, audit.json, inbox.json, kill-switch.json,
+//     agent-proposal.json (transient), agent-sessions.json,
+//     pending-lessons/
 //
-// Schema mirrors MC v0.3 so existing rendering patterns can be reused.
+// On first read of a project after upgrade, public files migrate from the
+// operator dir into <cwd>/.yunomia/ idempotently (see migrate_into_project_local).
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -67,6 +71,71 @@ pub(crate) fn ensure_project_dir(cwd: &str) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+// Operator-local state: same dir as ensure_project_dir; this is the "private"
+// half of the split. Audit log, kill-switch, inbox, lifecycle state.
+pub(crate) fn ensure_operator_dir(cwd: &str) -> Result<PathBuf, String> {
+    ensure_project_dir(cwd)
+}
+
+// Project-local artifacts dir at <cwd>/.yunomia/. Files here are intended to
+// be committed to the project's git repo so brief, agent souls, and lessons
+// travel with the project. On first creation we migrate matching files from
+// the operator dir so existing projects upgrade smoothly.
+pub(crate) fn ensure_project_local_dir(cwd: &str) -> Result<PathBuf, String> {
+    let dir = PathBuf::from(cwd).join(".yunomia");
+    let new = !dir.exists();
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    if new { migrate_into_project_local(cwd, &dir)?; }
+    Ok(dir)
+}
+
+fn migrate_into_project_local(cwd: &str, project_local: &PathBuf) -> Result<(), String> {
+    let op = project_dir(cwd);
+    if !op.exists() { return Ok(()); }
+    const PUBLIC_FILES: &[&str] = &[
+        "brief.md", "agents.json", "lessons.json", "taxonomy.json",
+        "tickets.json", "comments.json", "schedules.json",
+        "prefix.txt", "counter.txt",
+        "proposed-tickets.json", "proposed-agents.json",
+    ];
+    for name in PUBLIC_FILES {
+        let src = op.join(name);
+        let dst = project_local.join(name);
+        if src.exists() && !dst.exists() {
+            if fs::rename(&src, &dst).is_err() {
+                if let Ok(_) = fs::copy(&src, &dst) {
+                    let _ = fs::remove_file(&src);
+                }
+            }
+        }
+    }
+    let agents_src = op.join("agents");
+    let agents_dst = project_local.join("agents");
+    if agents_src.is_dir() && !agents_dst.exists() {
+        if fs::rename(&agents_src, &agents_dst).is_err() {
+            // best-effort recursive copy fallback
+            let _ = copy_dir_recursive(&agents_src, &agents_dst);
+            let _ = fs::remove_dir_all(&agents_src);
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let p = entry.path();
+        let target = dst.join(entry.file_name());
+        if p.is_dir() {
+            copy_dir_recursive(&p, &target)?;
+        } else {
+            fs::copy(&p, &target)?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn read_json<T: for<'de> Deserialize<'de> + Default>(path: &PathBuf) -> Result<T, String> {
     if !path.exists() { return Ok(T::default()); }
     let raw = fs::read_to_string(path).map_err(|e| e.to_string())?;
@@ -114,7 +183,7 @@ pub struct ListArgs {
 
 #[tauri::command]
 pub fn tickets_list(args: ListArgs) -> Result<Vec<Ticket>, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("tickets.json");
     let tickets: Vec<Ticket> = read_json(&path)?;
     Ok(tickets)
@@ -133,7 +202,7 @@ pub struct CreateArgs {
 
 #[tauri::command]
 pub fn tickets_create(args: CreateArgs) -> Result<Ticket, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("tickets.json");
     let mut tickets: Vec<Ticket> = read_json(&path)?;
     let now = now_iso();
@@ -152,7 +221,7 @@ pub fn tickets_create(args: CreateArgs) -> Result<Ticket, String> {
     };
     tickets.push(ticket.clone());
     write_json(&path, &tickets)?;
-    write_audit(&dir, "ticket.created", &ticket.id, "user", serde_json::json!({ "human_id": ticket.human_id, "title": ticket.title }))?;
+    write_audit_for(&args.cwd, "ticket.created", &ticket.id, "user", serde_json::json!({ "human_id": ticket.human_id, "title": ticket.title }))?;
     Ok(ticket)
 }
 
@@ -165,7 +234,7 @@ pub struct PatchArgs {
 
 #[tauri::command]
 pub fn tickets_patch(args: PatchArgs) -> Result<Ticket, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("tickets.json");
     let mut tickets: Vec<Ticket> = read_json(&path)?;
     let idx = tickets.iter().position(|t| t.id == args.id).ok_or_else(|| "ticket not found".to_string())?;
@@ -189,7 +258,7 @@ pub fn tickets_patch(args: PatchArgs) -> Result<Ticket, String> {
     t.updated_at = now_iso();
     tickets[idx] = t.clone();
     write_json(&path, &tickets)?;
-    write_audit(&dir, "ticket.patched", &t.id, "user", serde_json::Value::Object(changed))?;
+    write_audit_for(&args.cwd, "ticket.patched", &t.id, "user", serde_json::Value::Object(changed))?;
     Ok(t)
 }
 
@@ -222,7 +291,7 @@ pub struct CommentsListArgs {
 
 #[tauri::command]
 pub fn comments_list(args: CommentsListArgs) -> Result<Vec<Comment>, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("comments.json");
     let comments: Vec<Comment> = read_json(&path)?;
     Ok(match args.ticket_id {
@@ -241,7 +310,7 @@ pub struct CommentCreateArgs {
 
 #[tauri::command]
 pub fn comments_create(args: CommentCreateArgs) -> Result<Comment, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("comments.json");
     let mut comments: Vec<Comment> = read_json(&path)?;
     let comment = Comment {
@@ -253,7 +322,7 @@ pub fn comments_create(args: CommentCreateArgs) -> Result<Comment, String> {
     };
     comments.push(comment.clone());
     write_json(&path, &comments)?;
-    write_audit(&dir, "ticket.commented", &args.ticket_id, &comment.author_label, serde_json::json!({ "comment_id": comment.id }))?;
+    write_audit_for(&args.cwd, "ticket.commented", &args.ticket_id, &comment.author_label, serde_json::json!({ "comment_id": comment.id }))?;
     Ok(comment)
 }
 
@@ -337,7 +406,7 @@ pub struct BriefArgs {
 
 #[tauri::command]
 pub fn brief_get(args: BriefArgs) -> Result<String, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("brief.md");
     if !path.exists() { return Ok(String::new()); }
     fs::read_to_string(&path).map_err(|e| e.to_string())
@@ -351,7 +420,7 @@ pub struct BriefWriteArgs {
 
 #[tauri::command]
 pub fn brief_write(args: BriefWriteArgs) -> Result<(), String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("brief.md");
     fs::write(&path, args.markdown).map_err(|e| e.to_string())
 }
@@ -459,8 +528,9 @@ pub struct AgentProposalApproveArgs {
 }
 #[tauri::command]
 pub fn agent_proposal_approve(args: AgentProposalApproveArgs) -> Result<ProjectAgent, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
-    let agent_dir = dir.join("agents").join(&args.proposal.code);
+    let project_dir = ensure_project_local_dir(&args.cwd)?;
+    let op_dir = ensure_operator_dir(&args.cwd)?;
+    let agent_dir = project_dir.join("agents").join(&args.proposal.code);
     fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
     let p = &args.proposal;
     fs::write(agent_dir.join("soul.md"),         default_text(&p.soul_md,         &default_soul(&p.code, &p.reason))).map_err(|e| e.to_string())?;
@@ -474,15 +544,92 @@ pub fn agent_proposal_approve(args: AgentProposalApproveArgs) -> Result<ProjectA
         heartbeat_min: p.heartbeat_min.unwrap_or(60),
         note: Some(p.reason.clone()),
     };
-    let path = dir.join("agents.json");
+    let path = project_dir.join("agents.json");
     let mut existing: Vec<ProjectAgent> = read_json(&path)?;
     existing.retain(|x| x.code != agent.code);
     existing.push(agent.clone());
     write_json(&path, &existing)?;
-    // Clear proposal so the modal doesn't re-fire.
-    let _ = fs::remove_file(agent_proposal_path(&dir));
-    write_audit(&dir, "agent.approved", "", "user", serde_json::json!({ "code": agent.code }))?;
+    // Clear proposal sentinel (it lives in the operator dir, transient).
+    let _ = fs::remove_file(agent_proposal_path(&op_dir));
+    write_audit(&op_dir, "agent.approved", "", "user", serde_json::json!({ "code": agent.code }))?;
     Ok(agent)
+}
+
+// Scaffold the four per-agent markdown files for a freshly-ingested agent.
+// Idempotent - only writes a file if it doesn't already exist or is empty,
+// so it never clobbers user-edited souls/kickoffs. Called automatically by
+// the approve-brief flow for every agent in proposed-agents.json so
+// auto-spawned heartbeat agents (CEO etc.) actually know who they are.
+#[derive(Deserialize)]
+pub struct AgentScaffoldArgs {
+    pub cwd: String,
+    pub code: String,
+    pub role: String,
+    pub project_name: Option<String>,
+    pub brief_excerpt: Option<String>,
+}
+
+#[tauri::command]
+pub fn agent_files_scaffold(args: AgentScaffoldArgs) -> Result<(), String> {
+    let dir = ensure_project_local_dir(&args.cwd)?;
+    let agent_dir = dir.join("agents").join(&args.code);
+    fs::create_dir_all(&agent_dir).map_err(|e| e.to_string())?;
+    let project_name = args.project_name.unwrap_or_default();
+    let brief_excerpt = args.brief_excerpt.unwrap_or_default();
+    let kickoff_text = if brief_excerpt.is_empty() && project_name.is_empty() {
+        default_kickoff(&args.code, &args.role)
+    } else {
+        rich_kickoff(&args.code, &args.role, &project_name, &brief_excerpt)
+    };
+    write_if_missing(&agent_dir.join("kickoff.md"), &kickoff_text)?;
+    write_if_missing(&agent_dir.join("soul.md"), &default_soul(&args.code, &args.role))?;
+    write_if_missing(&agent_dir.join("pre-compact.md"), &default_pre_compact(&args.code))?;
+    write_if_missing(&agent_dir.join("reawaken.md"), &default_reawaken(&args.code))?;
+    Ok(())
+}
+
+fn write_if_missing(path: &PathBuf, contents: &str) -> Result<(), String> {
+    if path.exists() {
+        let existing = fs::read_to_string(path).unwrap_or_default();
+        if !existing.trim().is_empty() { return Ok(()); }
+    }
+    fs::write(path, contents).map_err(|e| e.to_string())
+}
+
+fn rich_kickoff(code: &str, role: &str, project_name: &str, brief_excerpt: &str) -> String {
+    format!(
+"You are {code}, an agent on the **{project_name}** project.
+
+Your role (from Lead's proposal): {role}
+
+## Project context (excerpt from brief.md)
+
+{brief_excerpt}
+
+The full brief lives at `.yunomia/brief.md` in the project root.
+
+## First-wake actions
+
+1. Read your soul (`.yunomia/agents/{code}/soul.md`), the full brief (`.yunomia/brief.md`), and any open tickets routed to you in `.yunomia/tickets.json`.
+2. If you have an in-progress ticket assigned to you, resume it.
+3. If your queue is empty, idle until something lands. Don't invent work.
+
+## Bug protocol (mandatory before fix code)
+
+For any `type=bug` ticket assigned to you:
+1. Read `.yunomia/lessons.json`. Search for parallels by symptom, files, tags.
+2. Post an in_progress comment with one of these lines verbatim:
+   - `Lesson cited: BL-NNN - <how it applies>`
+   - `Lessons cited: BL-NNN, BL-MMM - <how they apply>`
+   - `No matching lessons in N reviewed`
+3. Yunomia's compliance engine blocks /handoff and /done until that line exists.
+4. After closing the bug, file a new lesson via the pending-lessons sentinel (see your soul.md for the schema).
+
+## Filing a Bug Lesson (post-fix)
+
+Write JSON to `~/.yunomia/projects/<sanitised-cwd>/pending-lessons/<uuid>.json`. Yunomia ingests within 10 s and removes the file. Schema is documented in your soul.md.
+"
+    )
 }
 
 fn default_text(opt: &Option<String>, fallback: &str) -> String {
@@ -516,7 +663,7 @@ pub struct Schedule {
 pub struct SchedulesListArgs { pub cwd: String }
 #[tauri::command]
 pub fn schedules_list(args: SchedulesListArgs) -> Result<Vec<Schedule>, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     Ok(read_json(&dir.join("schedules.json"))?)
 }
 #[derive(Deserialize)]
@@ -526,7 +673,7 @@ pub struct ScheduleSetArgs {
 }
 #[tauri::command]
 pub fn schedules_set(args: ScheduleSetArgs) -> Result<Schedule, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("schedules.json");
     let mut list: Vec<Schedule> = read_json(&path)?;
     list.retain(|s| s.ticket_id != args.ticket_id);
@@ -550,7 +697,7 @@ pub fn schedules_set(args: ScheduleSetArgs) -> Result<Schedule, String> {
 pub struct ScheduleClearArgs { pub cwd: String, pub ticket_id: String }
 #[tauri::command]
 pub fn schedules_clear(args: ScheduleClearArgs) -> Result<(), String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("schedules.json");
     let mut list: Vec<Schedule> = read_json(&path)?;
     list.retain(|s| s.ticket_id != args.ticket_id);
@@ -558,7 +705,7 @@ pub fn schedules_clear(args: ScheduleClearArgs) -> Result<(), String> {
 }
 #[tauri::command]
 pub fn schedules_due_now(args: SchedulesListArgs) -> Result<Vec<Schedule>, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("schedules.json");
     let mut list: Vec<Schedule> = read_json(&path)?;
     let now = chrono::Utc::now();
@@ -653,7 +800,7 @@ pub fn inbox_mark_all(args: InboxMarkAllArgs) -> Result<u32, String> {
 pub struct AgentFileArgs { pub cwd: String, pub code: String, pub kind: String }     // kind: kickoff | goals | soul
 #[tauri::command]
 pub fn agent_file_get(args: AgentFileArgs) -> Result<String, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("agents").join(&args.code).join(format!("{}.md", args.kind));
     if !path.exists() { return Ok(String::new()); }
     fs::read_to_string(&path).map_err(|e| e.to_string())
@@ -662,7 +809,7 @@ pub fn agent_file_get(args: AgentFileArgs) -> Result<String, String> {
 pub struct AgentFileWriteArgs { pub cwd: String, pub code: String, pub kind: String, pub markdown: String }
 #[tauri::command]
 pub fn agent_file_write(args: AgentFileWriteArgs) -> Result<(), String> {
-    let dir = ensure_project_dir(&args.cwd)?.join("agents").join(&args.code);
+    let dir = ensure_project_local_dir(&args.cwd)?.join("agents").join(&args.code);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(dir.join(format!("{}.md", args.kind)), args.markdown).map_err(|e| e.to_string())
 }
@@ -681,14 +828,14 @@ pub struct ProjectAgent {
 pub struct AgentsListArgs { pub cwd: String }
 #[tauri::command]
 pub fn project_agents_list(args: AgentsListArgs) -> Result<Vec<ProjectAgent>, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     Ok(read_json(&dir.join("agents.json"))?)
 }
 #[derive(Deserialize)]
 pub struct AgentsUpsertArgs { pub cwd: String, pub agents: Vec<ProjectAgent> }
 #[tauri::command]
 pub fn project_agents_upsert(args: AgentsUpsertArgs) -> Result<Vec<ProjectAgent>, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("agents.json");
     let mut existing: Vec<ProjectAgent> = read_json(&path)?;
     for a in args.agents.into_iter() {
@@ -705,7 +852,7 @@ pub fn project_agents_upsert(args: AgentsUpsertArgs) -> Result<Vec<ProjectAgent>
 pub struct AgentsRemoveArgs { pub cwd: String, pub code: String }
 #[tauri::command]
 pub fn project_agents_remove(args: AgentsRemoveArgs) -> Result<(), String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("agents.json");
     let mut list: Vec<ProjectAgent> = read_json(&path)?;
     list.retain(|a| a.code != args.code);
@@ -725,7 +872,7 @@ pub struct ReportsSummary {
 pub struct ReportsArgs { pub cwd: String }
 #[tauri::command]
 pub fn reports_summary(args: ReportsArgs) -> Result<ReportsSummary, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let tickets: Vec<Ticket> = read_json(&dir.join("tickets.json"))?;
     let mut summary = ReportsSummary::default();
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
@@ -765,12 +912,13 @@ pub struct EligibleActions {
 pub struct EligibleArgs { pub cwd: String, pub id: String }
 #[tauri::command]
 pub fn eligible_actions(args: EligibleArgs) -> Result<EligibleActions, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
-    let kill = read_kill_switch(&dir);
-    let tickets: Vec<Ticket> = read_json(&dir.join("tickets.json"))?;
+    let project_dir = ensure_project_local_dir(&args.cwd)?;
+    let op_dir = ensure_operator_dir(&args.cwd)?;
+    let kill = read_kill_switch(&op_dir);
+    let tickets: Vec<Ticket> = read_json(&project_dir.join("tickets.json"))?;
     let t = tickets.iter().find(|x| x.id == args.id).ok_or_else(|| "not found".to_string())?;
-    let comments: Vec<Comment> = read_json(&dir.join("comments.json"))?;
-    let lessons: Vec<Lesson> = read_json(&dir.join("lessons.json"))?;
+    let comments: Vec<Comment> = read_json(&project_dir.join("comments.json"))?;
+    let lessons: Vec<Lesson> = read_json(&project_dir.join("lessons.json"))?;
     let mut e = EligibleActions {
         can_start: true, start_reason: None,
         can_handoff: true, handoff_reason: None,
@@ -898,7 +1046,7 @@ pub struct LessonsListArgs { pub cwd: String }
 
 #[tauri::command]
 pub fn lessons_list(args: LessonsListArgs) -> Result<Vec<Lesson>, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("lessons.json");
     let lessons: Vec<Lesson> = read_json(&path)?;
     Ok(lessons)
@@ -923,7 +1071,7 @@ pub struct LessonCreateArgs {
 #[tauri::command]
 pub fn lessons_create(args: LessonCreateArgs) -> Result<Lesson, String> {
     if args.symptom.trim().is_empty() { return Err("symptom required".into()); }
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("lessons.json");
     let mut lessons: Vec<Lesson> = read_json(&path)?;
     let counter_path = dir.join("lessons-counter.txt");
@@ -949,7 +1097,7 @@ pub fn lessons_create(args: LessonCreateArgs) -> Result<Lesson, String> {
     };
     lessons.push(lesson.clone());
     write_json(&path, &lessons)?;
-    write_audit(&dir, "lesson.created", lesson.ticket_id.as_deref().unwrap_or(""), &lesson.created_by,
+    write_audit_for(&args.cwd, "lesson.created", lesson.ticket_id.as_deref().unwrap_or(""), &lesson.created_by,
                 serde_json::json!({ "lesson_id": lesson.id, "human_id": lesson.human_id }))?;
     Ok(lesson)
 }
@@ -963,7 +1111,7 @@ pub struct LessonPatchArgs {
 
 #[tauri::command]
 pub fn lessons_patch(args: LessonPatchArgs) -> Result<Lesson, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("lessons.json");
     let mut lessons: Vec<Lesson> = read_json(&path)?;
     let idx = lessons.iter().position(|l| l.id == args.id).ok_or_else(|| "lesson not found".to_string())?;
@@ -992,7 +1140,7 @@ pub struct LessonDeleteArgs { pub cwd: String, pub id: String }
 
 #[tauri::command]
 pub fn lessons_delete(args: LessonDeleteArgs) -> Result<(), String> {
-    let dir = ensure_project_dir(&args.cwd)?;
+    let dir = ensure_project_local_dir(&args.cwd)?;
     let path = dir.join("lessons.json");
     let mut lessons: Vec<Lesson> = read_json(&path)?;
     lessons.retain(|l| l.id != args.id);
@@ -1029,32 +1177,100 @@ pub struct Proposals {
 
 #[tauri::command]
 pub fn proposals_read(args: ProposalsReadArgs) -> Result<Proposals, String> {
-    let dir = ensure_project_dir(&args.cwd)?;
-    let tickets: Vec<ProposedTicket> = if dir.join("proposed-tickets.json").exists() {
-        let raw = fs::read_to_string(dir.join("proposed-tickets.json")).map_err(|e| e.to_string())?;
-        if raw.trim().is_empty() { Vec::new() } else { serde_json::from_str(&raw).unwrap_or_default() }
-    } else { Vec::new() };
-    let agents: Vec<ProposedAgent> = if dir.join("proposed-agents.json").exists() {
-        let raw = fs::read_to_string(dir.join("proposed-agents.json")).map_err(|e| e.to_string())?;
-        if raw.trim().is_empty() { Vec::new() } else { serde_json::from_str(&raw).unwrap_or_default() }
-    } else { Vec::new() };
+    // Lead writes proposals to the project-local dir so the user can inspect
+    // and edit them. Fallback: also peek at the legacy operator location for
+    // pre-v0.1.16 projects whose Lead was instructed to write there.
+    let project_dir = ensure_project_local_dir(&args.cwd)?;
+    let op_dir = project_dir_legacy(&args.cwd);
+    let load_at = |dir: &PathBuf, name: &str| -> Vec<serde_json::Value> {
+        let p = dir.join(name);
+        if !p.exists() { return Vec::new(); }
+        let raw = match fs::read_to_string(&p) { Ok(s) => s, Err(_) => return Vec::new() };
+        if raw.trim().is_empty() { return Vec::new(); }
+        serde_json::from_str(&raw).unwrap_or_default()
+    };
+    let mut tickets_raw = load_at(&project_dir, "proposed-tickets.json");
+    if tickets_raw.is_empty() { tickets_raw = load_at(&op_dir, "proposed-tickets.json"); }
+    let mut agents_raw = load_at(&project_dir, "proposed-agents.json");
+    if agents_raw.is_empty() { agents_raw = load_at(&op_dir, "proposed-agents.json"); }
+    let tickets: Vec<ProposedTicket> = serde_json::from_value(serde_json::Value::Array(tickets_raw)).unwrap_or_default();
+    let agents: Vec<ProposedAgent> = serde_json::from_value(serde_json::Value::Array(agents_raw)).unwrap_or_default();
     Ok(Proposals { tickets, agents })
 }
+
+fn project_dir_legacy(cwd: &str) -> PathBuf { project_dir(cwd) }
 
 #[derive(Deserialize)]
 pub struct ProposalsClearArgs { pub cwd: String }
 
+// Project-customisable taxonomy. Lead writes this file during onboarding so
+// "audiences" and "ticket_types" reflect the actual project shape; falls
+// back to a generic default if missing.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Taxonomy {
+    pub audiences: Vec<String>,
+    pub ticket_types: Vec<String>,
+}
+impl Default for Taxonomy {
+    fn default() -> Self {
+        Self {
+            audiences: vec!["product".into(), "ops".into(), "internal".into()],
+            ticket_types: vec!["feature".into(), "bug".into(), "doc".into(), "ops".into(), "migration".into(), "gate".into()],
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct TaxonomyArgs { pub cwd: String }
+#[tauri::command]
+pub fn taxonomy_get(args: TaxonomyArgs) -> Result<Taxonomy, String> {
+    let dir = ensure_project_local_dir(&args.cwd)?;
+    let path = dir.join("taxonomy.json");
+    if !path.exists() { return Ok(Taxonomy::default()); }
+    let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    if raw.trim().is_empty() { return Ok(Taxonomy::default()); }
+    Ok(serde_json::from_str(&raw).unwrap_or_default())
+}
+
+#[derive(Deserialize)]
+pub struct TaxonomySetArgs { pub cwd: String, pub taxonomy: Taxonomy }
+#[tauri::command]
+pub fn taxonomy_set(args: TaxonomySetArgs) -> Result<Taxonomy, String> {
+    let dir = ensure_project_local_dir(&args.cwd)?;
+    let path = dir.join("taxonomy.json");
+    write_json(&path, &args.taxonomy)?;
+    Ok(args.taxonomy)
+}
+
 #[tauri::command]
 pub fn proposals_clear(args: ProposalsClearArgs) -> Result<(), String> {
-    let dir = ensure_project_dir(&args.cwd)?;
-    for f in &["proposed-tickets.json", "proposed-agents.json"] {
-        let p = dir.join(f);
-        if p.exists() { let _ = fs::remove_file(p); }
+    let project_dir = ensure_project_local_dir(&args.cwd)?;
+    let op_dir = project_dir_legacy(&args.cwd);
+    for dir in [&project_dir, &op_dir] {
+        for f in &["proposed-tickets.json", "proposed-agents.json"] {
+            let p = dir.join(f);
+            if p.exists() { let _ = fs::remove_file(p); }
+        }
     }
     Ok(())
 }
 
+// Audit log lives in the operator dir (private), regardless of which dir
+// the caller is currently working with. Callers pass the operator dir
+// directly when they have it; if they only have the project_local dir, use
+// `write_audit_for(cwd, ...)` below.
 pub(crate) fn write_audit(dir: &PathBuf, action: &str, ticket_id: &str, actor: &str, details: serde_json::Value) -> Result<(), String> {
+    write_audit_inner(dir, action, ticket_id, actor, details)
+}
+
+// Convenience wrapper for callers that only have a cwd. Resolves the
+// operator dir internally and writes the audit there.
+pub(crate) fn write_audit_for(cwd: &str, action: &str, ticket_id: &str, actor: &str, details: serde_json::Value) -> Result<(), String> {
+    let dir = ensure_operator_dir(cwd)?;
+    write_audit_inner(&dir, action, ticket_id, actor, details)
+}
+
+fn write_audit_inner(dir: &PathBuf, action: &str, ticket_id: &str, actor: &str, details: serde_json::Value) -> Result<(), String> {
     let path = dir.join("audit.json");
     let mut audit: Vec<AuditEntry> = read_json(&path)?;
     audit.push(AuditEntry {
