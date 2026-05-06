@@ -5,7 +5,21 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Yunomia</title>
   <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+  <link rel="preload" href="./fonts/JetBrainsMonoNerdFont-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous" />
   <link rel="stylesheet" href="./style.css" />
+  <!-- Force the Nerd Font into immediate active use with a hidden glyph row.
+       Without this the browser lazy-loads the @font-face only when something
+       VISIBLE references it - and xterm's first cell metrics measurement
+       happens on a fallback font, so claude code's PUA / Powerline divider
+       glyphs render as `?` substitutes. -->
+  <style>
+    body::before {
+      content: '\E0B0\E0B2\F101\F102\F103\23F5\25CF\2726';
+      font-family: 'JetBrains Mono NF', monospace;
+      position: fixed; top: -100px; left: -100px;
+      visibility: hidden; pointer-events: none;
+    }
+  </style>
 </head>
 <body>
   <header class="topbar">
@@ -106,15 +120,6 @@
               </select>
               <select id="nt-assignee" title="Assignee">
                 <option value="">- unassigned</option>
-                <option value="CEO">🎯 CEO</option>
-                <option value="SA">🟧 SA</option>
-                <option value="AD">🟦 AD</option>
-                <option value="WA">🟪 WA</option>
-                <option value="DA">🟨 DA</option>
-                <option value="QA">🟥 QA</option>
-                <option value="WD">🌐 WD</option>
-                <option value="TA">🛠 TA</option>
-                <option value="PETER">🎩 PETER</option>
               </select>
             </div>
             <button type="submit" class="btn-primary">Create</button>
@@ -248,6 +253,7 @@
           <span id="settings-version">Yunomia v-</span>
           <button id="settings-check-updates" type="button" class="btn-secondary">Check for updates</button>
         </div>
+        <div id="settings-update-status" class="settings-update-status"></div>
       </section>
       <section class="settings-section">
         <h4>Compliance kill-switch (project-scoped)</h4>
@@ -300,17 +306,7 @@
       <header><h3>Spawn agent</h3></header>
       <form id="spawn-form">
         <label>Agent code</label>
-        <select id="spawn-code" required>
-          <option value="LEAD">🧭 LEAD</option>
-          <option value="CEO">🎯 CEO</option>
-          <option value="SA">🟧 SA</option>
-          <option value="AD">🟦 AD</option>
-          <option value="WA">🟪 WA</option>
-          <option value="DA">🟨 DA</option>
-          <option value="QA">🟥 QA</option>
-          <option value="WD">🌐 WD</option>
-          <option value="TA">🛠 TA</option>
-        </select>
+        <select id="spawn-code" required></select>
         <label>Model</label>
         <select id="spawn-model">
           <option value="claude-sonnet-4-6" selected>Sonnet 4.6 (default)</option>

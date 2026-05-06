@@ -1,3 +1,14 @@
+/* Bundled Nerd Font: gives xterm coverage for Claude Code TUI's Powerline /
+   Private-Use-Area glyphs that no system font ships. Without this, divider
+   spinner indicators rendered as `?` blob substitutes. */
+@font-face {
+  font-family: 'JetBrains Mono NF';
+  src: url('./fonts/JetBrainsMonoNerdFont-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   --bg: #f5f5f4;
   --surface: #ffffff;
@@ -130,6 +141,15 @@ body {
 }
 .composer-input:focus { border-color: var(--pepper); box-shadow: 0 0 0 3px rgba(220,38,38,0.10); }
 .composer-input.composer-dropping { border-color: var(--pepper); background: #fff7f7; }
+
+/* Settings → Updates inline status */
+.settings-update-status {
+  margin-top: 8px; font-size: 12px; color: var(--text-mid);
+  min-height: 1em;
+}
+.settings-update-status.status-ok        { color: #166534; }
+.settings-update-status.status-error     { color: #991b1b; }
+.settings-update-status.status-available { color: #92400e; font-weight: 600; }
 .composer-input::placeholder { color: var(--text-low); }
 .composer-send {
   height: 36px; min-width: 36px; padding: 0 12px;
@@ -376,10 +396,13 @@ body {
 
 /* Dashboard layout - kanban + right rail */
 .dashboard-layout {
-  flex: 1; min-height: 0;
-  display: grid; grid-template-columns: var(--rail-left-w) 6px 1fr 6px var(--rail-right-w); gap: 0;
-  padding: 12px; background: var(--bg);
+  flex: 1; min-height: 0; min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, var(--rail-left-w)) 6px minmax(0, 1fr) 6px minmax(0, var(--rail-right-w));
+  gap: 0;
+  padding: 12px; background: var(--bg); overflow: hidden;
 }
+.agent-rail, .rail-right { min-width: 0; }
 .resizer {
   cursor: col-resize; background: transparent;
   position: relative;
@@ -641,8 +664,19 @@ body {
 }
 
 /* Kanban empty state */
-.kanban-empty .k-empty-h { font-size: 16px; font-weight: 600; color: var(--text-hi); margin-bottom: 6px; }
-.kanban-empty .k-empty-sub { font-size: 13px; color: var(--text-mid); max-width: 380px; line-height: 1.5; }
+.kanban-empty .k-empty-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.85; }
+.kanban-empty .k-empty-h { font-size: 18px; font-weight: 600; color: var(--text-hi); margin-bottom: 6px; }
+.kanban-empty .k-empty-sub { font-size: 13px; color: var(--text-mid); max-width: 420px; line-height: 1.5; margin-bottom: 18px; }
+.kanban-empty .k-empty-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.kanban-empty .k-empty-btn {
+  font: inherit; font-size: 13px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface-2); color: var(--text-hi);
+  cursor: pointer; transition: border-color 80ms, background 80ms;
+}
+.kanban-empty .k-empty-btn:hover { border-color: var(--pepper); }
+.kanban-empty .k-empty-primary { background: var(--pepper); color: white; border-color: var(--pepper); }
+.kanban-empty .k-empty-primary:hover { background: var(--pepper-hi, #b91c1c); }
 .kanban {
   display: flex; gap: 10px; height: 100%; align-items: stretch;
   min-width: max-content;
@@ -686,8 +720,8 @@ body {
 .k-pill-app      { background: var(--pepper-soft); color: var(--pepper); }
 .k-pill-admin    { background: #ecfdf5; color: #047857; }
 .kanban-empty {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  color: var(--text-mid); font-size: 13px; padding: 20px;
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--text-mid); font-size: 13px; padding: 32px 20px; text-align: center;
 }
 
 /* Right rail - new-ticket form */

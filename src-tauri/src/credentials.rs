@@ -61,6 +61,7 @@ pub fn credentials_list(args: ListArgs) -> Result<Vec<CredMeta>, String> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpsertArgs {
     pub cwd: String,
     pub name: String,

@@ -190,6 +190,7 @@ pub fn tickets_list(args: ListArgs) -> Result<Vec<Ticket>, String> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateArgs {
     pub cwd: String,
     pub title: String,
@@ -284,6 +285,7 @@ pub fn tickets_transition(args: TransitionArgs) -> Result<Ticket, String> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommentsListArgs {
     pub cwd: String,
     pub ticket_id: Option<String>,
@@ -301,6 +303,7 @@ pub fn comments_list(args: CommentsListArgs) -> Result<Vec<Comment>, String> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommentCreateArgs {
     pub cwd: String,
     pub ticket_id: String,
@@ -561,6 +564,7 @@ pub fn agent_proposal_approve(args: AgentProposalApproveArgs) -> Result<ProjectA
 // the approve-brief flow for every agent in proposed-agents.json so
 // auto-spawned heartbeat agents (CEO etc.) actually know who they are.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentScaffoldArgs {
     pub cwd: String,
     pub code: String,
@@ -597,6 +601,12 @@ fn write_if_missing(path: &PathBuf, contents: &str) -> Result<(), String> {
 }
 
 fn rich_kickoff(code: &str, role: &str, project_name: &str, brief_excerpt: &str) -> String {
+    let is_orchestrator = matches!(code, "CEO" | "LEAD");
+    let authority_block = if is_orchestrator {
+        "## Authority over tickets.json (orchestrator)\n\nYou have FULL read+write access to `.yunomia/tickets.json`. As orchestrator your job is to ACTIVELY move tickets through their statuses — don't wait for permission to mutate the file. Concretely:\n\n- Use Edit / Write to change ticket `status` (`triage` → `assigned` → `in_progress` → `verifying` → `done`).\n- Use Edit / Write to change `assignee_agent` to route work to SA / FE / INT / QA / etc.\n- Use Edit / Write to add `body_md` notes describing why a transition happened.\n- The file is plain JSON in the project root. There is no API or middleware — your file edits ARE the source of truth.\n\nYou were spawned to orchestrate, not to ask. If a ticket has no blocker and a worker is idle, transition it. The operator (Peter) reviews via the Yunomia kanban; he does not need to approve every status change.\n\nWhen you transition a ticket out of `triage`, also append a one-line note to `body_md` so the assignee knows why they got it now.\n"
+    } else {
+        "## Authority over your own tickets\n\nYou have full read+write access to `.yunomia/tickets.json`. When you start work on a ticket assigned to you, transition it `assigned` → `in_progress` via Edit. When done, transition `in_progress` → `verifying` and hand off to QA. Don't wait for permission — your file edit IS the transition.\n"
+    };
     format!(
 "You are {code}, an agent on the **{project_name}** project.
 
@@ -614,6 +624,7 @@ The full brief lives at `.yunomia/brief.md` in the project root.
 2. If you have an in-progress ticket assigned to you, resume it.
 3. If your queue is empty, idle until something lands. Don't invent work.
 
+{authority_block}
 ## Bug protocol (mandatory before fix code)
 
 For any `type=bug` ticket assigned to you:
@@ -639,7 +650,13 @@ fn default_soul(code: &str, reason: &str) -> String {
     format!("# {} - Soul\n\nRole proposed by Lead: {}\n\n## Voice\n- Direct, technical, terse.\n- Pushes back on fuzzy scope.\n- Cites evidence over opinion.\n\n## Expertise\n(populate during onboarding)\n\n## Bug protocol - MANDATORY\nBefore writing a single line of code on any `type=bug` ticket:\n\n1. Read `~/.yunomia/projects/<this-project>/lessons.json`.\n2. Search for parallels by symptom, files, tags.\n3. In your in_progress comment, add ONE of these verbatim:\n     - `Lesson cited: BL-NNN - <one-line summary of how it applies>`\n     - `Lessons cited: BL-NNN, BL-MMM - <how they apply>`\n     - `No matching lessons in N reviewed`\n   (Yunomia's compliance engine blocks /handoff and /done until this line exists.)\n4. If a parallel exists, *use* it - start from the cited fix unless you can articulate why this is structurally different.\n5. After the bug is closed, write a new Bug Lesson via the sentinel-file flow (see kickoff).\n\n## Operating principles\n- Single-task focus.\n- Document decisions in tickets, not chat.\n- File a bug lesson on every defect closure.\n", code, reason)
 }
 fn default_kickoff(code: &str, reason: &str) -> String {
-    format!("You are {} - newly spawned by the project Lead.\n\nReason: {}\n\nFirst-wake actions:\n1. Read your soul, goals, and the project brief.\n2. Check your queue (assigned tickets in this project's kanban - `tickets.json`).\n3. If queue is empty, idle until something lands.\n\nFiling a Bug Lesson (after closing a `type=bug` ticket):\n- Write the lesson as JSON to `~/.yunomia/projects/<sanitised-cwd>/pending-lessons/<uuid>.json`.\n- Yunomia ingests within 10 s and removes the file.\n- Schema:\n   {{\n     \"symptom\": \"<one sentence>\",\n     \"severity\": \"low|medium|high|critical\",\n     \"ticket_id\": \"<uuid>\",\n     \"ticket_human_id\": \"<PRJ-NNN>\",\n     \"root_cause\": \"...\",\n     \"fix\": \"...\",\n     \"files_changed\": \"comma-separated paths\",\n     \"recognise_pattern\": \"how to spot this next time\",\n     \"prevent_action\": \"what to bake into testing/review to stop recurrence\",\n     \"tags\": [\"...\"],\n     \"created_by\": \"{}\"\n   }}\n\nBug protocol (also in your soul): always consult `lessons.json` BEFORE writing fix code. Cite the BL or state \"No matching lessons in N reviewed\" in your in_progress comment.\n", code, reason, code)
+    let is_orchestrator = matches!(code, "CEO" | "LEAD");
+    let authority = if is_orchestrator {
+        "Authority over tickets.json (orchestrator):\n- You have FULL read+write access to .yunomia/tickets.json. Use Edit / Write to transition status, change assignee_agent, append notes.\n- Don't wait for permission. As orchestrator your file edits ARE the transitions. The operator reviews via the kanban.\n- When you move a ticket out of triage, append a one-line note to body_md so the assignee knows why.\n\n"
+    } else {
+        "Authority over your own tickets:\n- You have full read+write access to .yunomia/tickets.json. When you start work on an assigned ticket, transition assigned → in_progress via Edit. When done, in_progress → verifying. Your file edit IS the transition.\n\n"
+    };
+    format!("You are {} - newly spawned by the project Lead.\n\nReason: {}\n\nFirst-wake actions:\n1. Read your soul, goals, and the project brief.\n2. Check your queue (assigned tickets in this project's kanban - `tickets.json`).\n3. If queue is empty, idle until something lands.\n\n{}Filing a Bug Lesson (after closing a `type=bug` ticket):\n- Write the lesson as JSON to `~/.yunomia/projects/<sanitised-cwd>/pending-lessons/<uuid>.json`.\n- Yunomia ingests within 10 s and removes the file.\n- Schema:\n   {{\n     \"symptom\": \"<one sentence>\",\n     \"severity\": \"low|medium|high|critical\",\n     \"ticket_id\": \"<uuid>\",\n     \"ticket_human_id\": \"<PRJ-NNN>\",\n     \"root_cause\": \"...\",\n     \"fix\": \"...\",\n     \"files_changed\": \"comma-separated paths\",\n     \"recognise_pattern\": \"how to spot this next time\",\n     \"prevent_action\": \"what to bake into testing/review to stop recurrence\",\n     \"tags\": [\"...\"],\n     \"created_by\": \"{}\"\n   }}\n\nBug protocol (also in your soul): always consult `lessons.json` BEFORE writing fix code. Cite the BL or state \"No matching lessons in N reviewed\" in your in_progress comment.\n", code, reason, authority, code)
 }
 fn default_pre_compact(code: &str) -> String {
     format!("/pre-compact for {}.\n\nSummarise (200–500 words):\n- Tickets touched this session (human ids + verdict).\n- Open questions you didn't get to.\n- Files modified.\n- Lessons learnt (file them via the pending-lessons sentinel BEFORE /compact - see your kickoff).\n- State you'll need to resume cleanly post-compact.\n\nThen trigger /compact.\n", code)
@@ -667,6 +684,7 @@ pub fn schedules_list(args: SchedulesListArgs) -> Result<Vec<Schedule>, String> 
     Ok(read_json(&dir.join("schedules.json"))?)
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScheduleSetArgs {
     pub cwd: String, pub ticket_id: String,
     pub scheduled_for: String, pub set_by: Option<String>,
@@ -1053,6 +1071,7 @@ pub fn lessons_list(args: LessonsListArgs) -> Result<Vec<Lesson>, String> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LessonCreateArgs {
     pub cwd: String,
     pub symptom: String,
@@ -1152,16 +1171,22 @@ pub fn lessons_delete(args: LessonDeleteArgs) -> Result<(), String> {
 // Approve-brief, Yunomia ingests them into real tickets + agents.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProposedTicket {
+    #[serde(alias = "name", alias = "summary")]
     pub title: String,
+    #[serde(alias = "body", alias = "description", alias = "details")]
     pub body_md: Option<String>,
+    #[serde(rename = "type", alias = "kind", alias = "category")]
     pub r#type: Option<String>,
     pub audience: Option<String>,
+    #[serde(alias = "assignee", alias = "owner", alias = "agent")]
     pub assignee_agent: Option<String>,
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProposedAgent {
+    #[serde(alias = "id", alias = "name")]
     pub code: String,
     pub model: Option<String>,
+    #[serde(alias = "role", alias = "purpose", alias = "description")]
     pub reason: Option<String>,
     pub wakeup_mode: Option<String>,    // "heartbeat" | "on-assignment"
 }
@@ -1173,6 +1198,10 @@ pub struct ProposalsReadArgs { pub cwd: String }
 pub struct Proposals {
     pub tickets: Vec<ProposedTicket>,
     pub agents: Vec<ProposedAgent>,
+    /// Human-readable warnings about skipped entries / parse failures so the
+    /// UI can show "13 found, 5 ingested, 8 skipped: missing title (3), …"
+    /// instead of silently returning 0.
+    pub diagnostics: Vec<String>,
 }
 
 #[tauri::command]
@@ -1180,27 +1209,95 @@ pub fn proposals_read(args: ProposalsReadArgs) -> Result<Proposals, String> {
     // Lead writes proposals to the project-local dir so the user can inspect
     // and edit them. Fallback: also peek at the legacy operator location for
     // pre-v0.1.16 projects whose Lead was instructed to write there.
+    //
+    // Every parse step records a diagnostic instead of silently returning
+    // an empty list - the v0.1.x re-ingest "0 tickets, 0 errors" trap
+    // happened because one missing field would kill the whole array via
+    // unwrap_or_default(). Now we parse per-element and report which entries
+    // we skipped and why.
     let project_dir = ensure_project_local_dir(&args.cwd)?;
     let op_dir = project_dir_legacy(&args.cwd);
-    let load_at = |dir: &PathBuf, name: &str| -> Vec<serde_json::Value> {
+    let mut diagnostics: Vec<String> = Vec::new();
+
+    let load_at = |dir: &PathBuf, name: &str, diags: &mut Vec<String>| -> (Vec<serde_json::Value>, bool) {
         let p = dir.join(name);
-        if !p.exists() { return Vec::new(); }
-        let raw = match fs::read_to_string(&p) { Ok(s) => s, Err(_) => return Vec::new() };
-        if raw.trim().is_empty() { return Vec::new(); }
-        serde_json::from_str(&raw).unwrap_or_default()
+        if !p.exists() { return (Vec::new(), false); }
+        let raw = match fs::read_to_string(&p) {
+            Ok(s) => s,
+            Err(e) => { diags.push(format!("could not read {}: {}", p.display(), e)); return (Vec::new(), true); }
+        };
+        if raw.trim().is_empty() {
+            diags.push(format!("{} is empty", p.display()));
+            return (Vec::new(), true);
+        }
+        if let Ok(v) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) { return (v, true); }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+            for key in ["tickets", "agents", "items", "data", "proposals"].iter() {
+                if let Some(arr) = v.get(*key).and_then(|x| x.as_array()) {
+                    return (arr.clone(), true);
+                }
+            }
+        }
+        diags.push(format!("{}: not a JSON array (found file but couldn't parse)", p.display()));
+        (Vec::new(), true)
     };
-    let mut tickets_raw = load_at(&project_dir, "proposed-tickets.json");
-    if tickets_raw.is_empty() { tickets_raw = load_at(&op_dir, "proposed-tickets.json"); }
-    let mut agents_raw = load_at(&project_dir, "proposed-agents.json");
-    if agents_raw.is_empty() { agents_raw = load_at(&op_dir, "proposed-agents.json"); }
-    let tickets: Vec<ProposedTicket> = serde_json::from_value(serde_json::Value::Array(tickets_raw)).unwrap_or_default();
-    let agents: Vec<ProposedAgent> = serde_json::from_value(serde_json::Value::Array(agents_raw)).unwrap_or_default();
-    Ok(Proposals { tickets, agents })
+
+    let (mut tickets_raw, t_found_local) = load_at(&project_dir, "proposed-tickets.json", &mut diagnostics);
+    let mut t_found_legacy = false;
+    if tickets_raw.is_empty() {
+        let (legacy, found) = load_at(&op_dir, "proposed-tickets.json", &mut diagnostics);
+        t_found_legacy = found;
+        if !legacy.is_empty() { tickets_raw = legacy; }
+    }
+    if !t_found_local && !t_found_legacy {
+        diagnostics.push(format!("no proposed-tickets.json at {} (project) or {} (legacy operator dir)", project_dir.display(), op_dir.display()));
+    }
+
+    let (mut agents_raw, a_found_local) = load_at(&project_dir, "proposed-agents.json", &mut diagnostics);
+    let mut a_found_legacy = false;
+    if agents_raw.is_empty() {
+        let (legacy, found) = load_at(&op_dir, "proposed-agents.json", &mut diagnostics);
+        a_found_legacy = found;
+        if !legacy.is_empty() { agents_raw = legacy; }
+    }
+    if !a_found_local && !a_found_legacy {
+        diagnostics.push(format!("no proposed-agents.json at {} (project) or {} (legacy operator dir)", project_dir.display(), op_dir.display()));
+    }
+
+    let mut tickets: Vec<ProposedTicket> = Vec::with_capacity(tickets_raw.len());
+    for (i, v) in tickets_raw.iter().enumerate() {
+        match serde_json::from_value::<ProposedTicket>(v.clone()) {
+            Ok(t) => {
+                if t.title.trim().is_empty() {
+                    diagnostics.push(format!("ticket[{}] skipped: empty title", i));
+                } else {
+                    tickets.push(t);
+                }
+            }
+            Err(e) => diagnostics.push(format!("ticket[{}] skipped: {}", i, e)),
+        }
+    }
+    let mut agents: Vec<ProposedAgent> = Vec::with_capacity(agents_raw.len());
+    for (i, v) in agents_raw.iter().enumerate() {
+        match serde_json::from_value::<ProposedAgent>(v.clone()) {
+            Ok(a) => {
+                if a.code.trim().is_empty() {
+                    diagnostics.push(format!("agent[{}] skipped: empty code", i));
+                } else {
+                    agents.push(a);
+                }
+            }
+            Err(e) => diagnostics.push(format!("agent[{}] skipped: {}", i, e)),
+        }
+    }
+
+    Ok(Proposals { tickets, agents, diagnostics })
 }
 
 fn project_dir_legacy(cwd: &str) -> PathBuf { project_dir(cwd) }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProposalsClearArgs { pub cwd: String }
 
 // Project-customisable taxonomy. Lead writes this file during onboarding so

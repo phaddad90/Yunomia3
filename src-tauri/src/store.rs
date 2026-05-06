@@ -158,6 +158,7 @@ pub struct ContextEstimate {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContextEstimateArgs {
     pub cwd: String,
     // Optional. When provided, look up this agent's recorded session_id in
@@ -190,17 +191,67 @@ fn agent_session_lookup(cwd: &str, agent_code: &str) -> Option<String> {
     map.get(agent_code).cloned()
 }
 
+fn agent_session_pin(cwd: &str, agent_code: &str, session_id: &str) -> Result<(), String> {
+    let path = yunomia_project_op_dir(cwd)?.join("agent-sessions.json");
+    let mut map: std::collections::HashMap<String, String> = if path.exists() {
+        let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        if raw.trim().is_empty() { std::collections::HashMap::new() }
+        else { serde_json::from_str(&raw).unwrap_or_default() }
+    } else {
+        std::collections::HashMap::new()
+    };
+    map.insert(agent_code.to_string(), session_id.to_string());
+    let serialised = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
+    if let Some(parent) = path.parent() { let _ = fs::create_dir_all(parent); }
+    fs::write(&path, serialised).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn agent_context_estimate(args: ContextEstimateArgs) -> Result<Option<ContextEstimate>, String> {
     let proj_dir = claude_project_dir(&args.cwd)?;
     if !proj_dir.exists() { return Ok(None); }
     // If we have an explicit session for this agent, read THAT JSONL only.
+    // EXCEPT: claude-code rotates session IDs after /compact - the old jsonl
+    // stops growing and a new one appears. If we keep reading the old one,
+    // the context % stays at 100 forever post-compact. Detect rotation by
+    // comparing recorded session's mtime to the newest jsonl in the project
+    // dir; if there's a newer one with non-trivial size, switch to it and
+    // re-record so the agent_session_lookup converges.
     let recorded_session = args.agent_code.as_deref().and_then(|c| agent_session_lookup(&args.cwd, c));
     let (path, bytes) = if let Some(sid) = &recorded_session {
-        let p = proj_dir.join(format!("{}.jsonl", sid));
-        if !p.exists() { return Ok(None); }
-        let len = p.metadata().map_err(|e| e.to_string())?.len();
-        (p, len)
+        let recorded_path = proj_dir.join(format!("{}.jsonl", sid));
+        if !recorded_path.exists() { return Ok(None); }
+        let recorded_meta = recorded_path.metadata().map_err(|e| e.to_string())?;
+        let recorded_mtime = recorded_meta.modified().ok();
+        // Look for a newer jsonl that started writing AFTER the recorded
+        // session's last update. If found, that's the post-compact rotation.
+        let mut newer: Option<(PathBuf, std::time::SystemTime, u64)> = None;
+        if let Some(rmt) = recorded_mtime {
+            for entry in fs::read_dir(&proj_dir).map_err(|e| e.to_string())?.flatten() {
+                let p = entry.path();
+                if p == recorded_path { continue; }
+                if p.extension().and_then(|s| s.to_str()) != Some("jsonl") { continue; }
+                let m = match entry.metadata() { Ok(m) => m, Err(_) => continue };
+                let mt = match m.modified() { Ok(t) => t, Err(_) => continue };
+                if mt > rmt && m.len() > 256 {
+                    let take = newer.as_ref().map(|(_, t, _)| mt > *t).unwrap_or(true);
+                    if take { newer = Some((p, mt, m.len())); }
+                }
+            }
+        }
+        if let Some((np, _, nb)) = newer {
+            // Re-record so future ticks (and the chip's session_id label)
+            // converge on the new session.
+            let new_sid = np.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+            if !new_sid.is_empty() {
+                if let Some(code) = args.agent_code.as_deref() {
+                    let _ = agent_session_pin(&args.cwd, code, &new_sid);
+                }
+            }
+            (np, nb)
+        } else {
+            (recorded_path, recorded_meta.len())
+        }
     } else {
         // Fallback: pick the newest jsonl. Used for the resume banner and
         // pre-v0.1.16 spawns that never recorded a session.
@@ -255,6 +306,7 @@ pub fn agent_context_estimate(args: ContextEstimateArgs) -> Result<Option<Contex
 // trigger discovery: pick the newest JSONL whose mtime is after the spawn
 // timestamp.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentSessionRecordArgs {
     pub cwd: String,
     pub agent_code: String,

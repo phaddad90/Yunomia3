@@ -15,7 +15,10 @@ const LS_LAST_CHECK = 'yunomia.lastUpdateCheck';
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;   // every 6 hours
 
 // Returns { kind: 'available' | 'none' | 'error', update?, error? }
-export async function bootCheckForUpdates({ silent = true } = {}) {
+// When { showBanner: true } and an update is available, also injects the
+// top-of-app banner. Set false when the caller wants to render its own UI
+// (e.g., the Settings modal) so the banner doesn't double up.
+export async function bootCheckForUpdates({ silent = true, showBanner = true } = {}) {
   if (silent) {
     const last = parseInt(localStorage.getItem(LS_LAST_CHECK) || '0', 10);
     if (Date.now() - last < CHECK_INTERVAL_MS) return { kind: 'none' };
@@ -28,8 +31,34 @@ export async function bootCheckForUpdates({ silent = true } = {}) {
     return { kind: 'error', error: String(err?.message || err) };
   }
   if (!update) return { kind: 'none' };
-  showUpdateBanner(update);
+  if (showBanner) showUpdateBanner(update);
   return { kind: 'available', update };
+}
+
+// Shared install pipeline used by both the banner and the Settings modal.
+// onProgress receives { stage: 'downloading'|'finished'|'restarting', pct? }.
+export async function installUpdate(update, onProgress = () => {}) {
+  let downloaded = 0;
+  let totalSize = 0;
+  await update.downloadAndInstall((event) => {
+    switch (event.event) {
+      case 'Started':
+        totalSize = event.data.contentLength || 0;
+        onProgress({ stage: 'downloading', pct: 0 });
+        break;
+      case 'Progress':
+        downloaded += event.data.chunkLength || 0;
+        if (totalSize) {
+          onProgress({ stage: 'downloading', pct: Math.round((downloaded / totalSize) * 100) });
+        }
+        break;
+      case 'Finished':
+        onProgress({ stage: 'finished' });
+        break;
+    }
+  });
+  onProgress({ stage: 'restarting' });
+  await relaunch();
 }
 
 function showUpdateBanner(update) {
@@ -51,27 +80,11 @@ function showUpdateBanner(update) {
     const btn = banner.querySelector('.update-install');
     btn.disabled = true;
     btn.textContent = 'Downloading…';
-    let downloaded = 0;
-    let totalSize = 0;
     try {
-      await update.downloadAndInstall((event) => {
-        switch (event.event) {
-          case 'Started':
-            totalSize = event.data.contentLength || 0;
-            break;
-          case 'Progress':
-            downloaded += event.data.chunkLength || 0;
-            if (totalSize) {
-              const pct = Math.round((downloaded / totalSize) * 100);
-              btn.textContent = `Downloading ${pct}%`;
-            }
-            break;
-          case 'Finished':
-            btn.textContent = 'Restarting…';
-            break;
-        }
+      await installUpdate(update, (p) => {
+        if (p.stage === 'downloading') btn.textContent = p.pct ? `Downloading ${p.pct}%` : 'Downloading…';
+        else if (p.stage === 'restarting') btn.textContent = 'Restarting…';
       });
-      await relaunch();
     } catch (err) {
       btn.disabled = false;
       btn.textContent = 'Install & restart';

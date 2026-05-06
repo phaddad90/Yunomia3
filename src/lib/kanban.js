@@ -114,8 +114,20 @@ function render() {
   const root = $('#kanban-root');
   if (!root) return;
   if (!k.tickets.length) {
-    renderEmpty(`<div class="k-empty-h">Nothing here yet</div>
-      <div class="k-empty-sub">Lead's proposed tickets land here after you approve, or use the form on the right to file one manually.</div>`);
+    renderEmpty(`<div class="k-empty-icon">📋</div>
+      <div class="k-empty-h">No tickets yet</div>
+      <div class="k-empty-sub">Lead's proposed tickets land here after you approve them, or file one manually using the form on the right.</div>
+      <div class="k-empty-actions">
+        <button type="button" class="k-empty-btn k-empty-primary" data-action="reingest">Re-ingest Lead's proposals</button>
+        <button type="button" class="k-empty-btn" data-action="reopen-onboarding">Re-open onboarding</button>
+      </div>`);
+    const root = $('#kanban-root');
+    root?.querySelector('[data-action="reingest"]')?.addEventListener('click', () => {
+      document.querySelector('#proposals-reingest')?.click();
+    });
+    root?.querySelector('[data-action="reopen-onboarding"]')?.addEventListener('click', () => {
+      document.querySelector('#brief-reopen')?.click();
+    });
     return;
   }
   const filtered = k.tickets.filter(ticketMatchesFilters);
@@ -194,7 +206,7 @@ async function openTicket(id) {
   try {
     k.comments = await invoke('comments_list', { args: { cwd: k.cwd, ticketId: id } });
   } catch { k.comments = []; }
-  renderSide(t);
+  await renderSide(t);
   $('#k-side').classList.remove('hidden');
 }
 
@@ -203,11 +215,23 @@ function closeSide() {
   k.selected = null;
 }
 
-function renderSide(t) {
+async function renderSide(t) {
   const types = ['bug','feature','doc','gate','migration','ops'].map((v) => `<option value="${v}"${v===t.type?' selected':''}>${v}</option>`).join('');
   const auds = ['app','admin'].map((v) => `<option value="${v}"${v===t.audience?' selected':''}>${v}</option>`).join('');
   const stats = COLUMNS.map((c) => `<option value="${c.id}"${c.id===t.status?' selected':''}>${c.label}</option>`).join('');
-  const agents = ['', 'CEO','SA','AD','WA','DA','QA','WD','TA','PETER'].map((a) => `<option value="${a}"${a===(t.assignee_agent||'')?' selected':''}>${a ? `${AGENT_EMOJI[a]||''} ${a}` : '- unassigned'}</option>`).join('');
+  // Pull this project's actual agents instead of the hardcoded
+  // PrintPepper-era roster. Falls back to just the current assignee
+  // if project_agents_list errors.
+  let projectAgentCodes = [];
+  try {
+    const list = await invoke('project_agents_list', { args: { cwd: k.cwd } }) || [];
+    projectAgentCodes = list.map((a) => a.code);
+  } catch { /* fallback below */ }
+  if (t.assignee_agent && !projectAgentCodes.includes(t.assignee_agent)) {
+    projectAgentCodes.push(t.assignee_agent);
+  }
+  const agentOpts = ['', ...projectAgentCodes];
+  const agents = agentOpts.map((a) => `<option value="${a}"${a===(t.assignee_agent||'')?' selected':''}>${a ? `${AGENT_EMOJI[a]||''} ${a}` : '- unassigned'}</option>`).join('');
   const commentsHtml = k.comments
     .slice()
     .sort((a, b) => (a.created_at||'').localeCompare(b.created_at||''))

@@ -227,11 +227,42 @@ fn spawn_inner(
     let app_for_reader = app.clone();
     thread::spawn(move || {
         let mut buf = [0u8; 4096];
+        // Carry-over for partial UTF-8 sequences that straddle a read
+        // boundary. Without this, `from_utf8_lossy` was replacing the
+        // trailing bytes of every cross-chunk multi-byte char (─ … ⏵)
+        // with U+FFFD, which renders as `???` in xterm.
+        let mut pending: Vec<u8> = Vec::new();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
+                    pending.extend_from_slice(&buf[..n]);
+                    // Find the largest valid UTF-8 prefix. Walk back from the
+                    // end up to 3 bytes (max UTF-8 continuation length) to
+                    // find where a clean break is.
+                    let valid_up_to = match std::str::from_utf8(&pending) {
+                        Ok(_) => pending.len(),
+                        Err(e) => e.valid_up_to(),
+                    };
+                    let chunk = if valid_up_to > 0 {
+                        // Safety: we just verified this prefix is valid UTF-8.
+                        let s = unsafe { std::str::from_utf8_unchecked(&pending[..valid_up_to]) }.to_string();
+                        // Keep the trailing incomplete bytes for next read.
+                        pending.drain(..valid_up_to);
+                        s
+                    } else {
+                        // Whole buffer is incomplete (rare). If pending grew
+                        // beyond 4 bytes without a valid prefix it's not
+                        // actually UTF-8 - emit lossy and drop to avoid
+                        // unbounded growth.
+                        if pending.len() >= 8 {
+                            let s = String::from_utf8_lossy(&pending).to_string();
+                            pending.clear();
+                            s
+                        } else {
+                            continue;
+                        }
+                    };
                     let event = format!("pty://output/{}", id_for_reader);
                     if let Err(e) = app_for_reader.emit(&event, chunk) {
                         log::warn!("emit failed for {}: {}", id_for_reader, e);

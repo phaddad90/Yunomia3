@@ -52,6 +52,7 @@ pub fn deploys_list(args: ListArgs) -> Result<Vec<DeployTarget>, String> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpsertArgs {
     pub cwd: String,
     pub id: Option<String>,
@@ -114,6 +115,7 @@ pub fn deploys_delete(args: DeleteArgs) -> Result<(), String> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RunArgs {
     pub cwd: String,
     pub target_id: String,

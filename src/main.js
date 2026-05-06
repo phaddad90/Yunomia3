@@ -22,7 +22,7 @@ import { renderDeploys } from './lib/deploys.js';
 import { startGitCiPolling, refreshGit, refreshCi } from './lib/git-ci.js';
 import { writeToAgent } from './lib/mc-bridge.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { bootCheckForUpdates } from './lib/updater.js';
+import { bootCheckForUpdates, installUpdate } from './lib/updater.js';
 import { getVersion } from '@tauri-apps/api/app';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
@@ -272,6 +272,22 @@ async function refreshContextStats() {
   for (const [, ent] of state.ptys.entries()) {
     if (ent.exited) continue;
     try {
+      // Re-fire agent_session_record on every tick until the agent has a
+      // pinned session_id. Agents started under pre-v0.1.33 builds had
+      // their initial record silently rejected (camelCase bug), so without
+      // this retry LEAD and CEO would both fall back to "newest jsonl in
+      // proj_dir" and report identical context %.
+      if (!ent.sessionPinned) {
+        try {
+          const sid = await invoke('agent_session_record', { args: {
+            cwd: ent.cwd,
+            agentCode: ent.code,
+            sessionId: ent.recordedSession || null,
+            sinceMs: (ent.spawnedAt || Date.now()) - 5000,
+          } });
+          if (sid) { ent.sessionPinned = true; ent.recordedSession = sid; }
+        } catch { /* claude-code project dir may not exist yet on first tick */ }
+      }
       const est = await invoke('agent_context_estimate', { args: { cwd: ent.cwd, agentCode: ent.code } });
       ent.contextEstimate = est || null;
       // Auto-compact at 50% when idle.
@@ -313,6 +329,15 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   if (state.ptys.has(key)) {
     setActivePane(key);
     return;
+  }
+  // Block until the bundled Nerd Font is ready: xterm measures the cell
+  // grid at construction, so if the font hasn't loaded yet xterm uses a
+  // fallback font for cell-width measurement and never re-measures, which
+  // is what made claude code's box-drawing land on a different grid pitch
+  // than the dashes.
+  if (document.fonts && !state.nfReady) {
+    try { await document.fonts.load('13px "JetBrains Mono NF"'); state.nfReady = true; }
+    catch (e) { console.warn('NF font load skipped', e); state.nfReady = true; }
   }
   const tabBtn = document.createElement('button');
   tabBtn.className = 'tab';
@@ -359,19 +384,32 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     composerInput.style.height = 'auto';
     composerInput.style.height = Math.min(composerInput.scrollHeight, 180) + 'px';
   };
-  const submitComposer = () => {
+  const submitComposer = async () => {
     const text = composerInput.value;
     if (!text) return;
-    // Bracketed paste: tells claude code's TUI "this is pasted text, preserve
-    // newlines" - cleaner than fighting per-version shift+enter conventions.
-    const wrapped = `\x1b[200~${text}\x1b[201~\r`;
-    // Diagnostic: every submit logs the agent code, length, and a preview.
-    // If a "lost message" recurs, the console history will show whether the
-    // composer fired with empty value or wrong text.
+    // claude code's TUI auto-detects pasted input when bytes arrive in one
+    // chunk: it strips the trailing CR from "<text>\r" and parks the text in
+    // the input buffer waiting for a real Enter. That's why composer sends
+    // were merging on the same line - first send sat in buffer, second send
+    // landed on top of it, only the *last* CR after a typing-speed gap fired
+    // submit. Fix: write payload, wait past the auto-paste threshold, then
+    // send CR alone so the TUI sees it as a real keypress.
+    // Multi-line messages still need bracketed paste so embedded newlines
+    // become newlines-within-input rather than line-by-line submits.
+    const payload = text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text;
     console.info('[composer]', code, 'submit', text.length, 'chars:', text.slice(0, 80) + (text.length > 80 ? '…' : ''));
-    invoke('pty_write', { args: { id: key, data: wrapped } }).catch((e) => console.warn('composer send', e));
     composerInput.value = '';
     autoGrow();
+    // Snap viewport to the bottom on send so the user immediately sees
+    // claude's response start streaming - xterm's auto-scroll-on-output
+    // only fires once new bytes arrive, which can be 1-2s after submit
+    // for thinking models.
+    try { term.scrollToBottom(); } catch { /* no-op */ }
+    try {
+      await invoke('pty_write', { args: { id: key, data: payload } });
+      await new Promise((r) => setTimeout(r, 150));
+      await invoke('pty_write', { args: { id: key, data: '\r' } });
+    } catch (e) { console.warn('composer send', e); }
   };
   composerInput.addEventListener('input', autoGrow);
   // Special-key passthrough: claude's TUI uses Esc/Ctrl+C/arrows/Tab. Since
@@ -422,7 +460,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
       const ext = (it.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
       try {
         const path = await saveBlobToClipboard(file, ext);
-        insertAtCursor(composerInput, (composerInput.value && !composerInput.value.endsWith('\n') ? '\n' : '') + path + '\n');
+        insertAtCursor(composerInput, (composerInput.value && !composerInput.value.endsWith('\n') ? '\n' : '') + `@${path}\n`);
         autoGrow();
       } catch (e) { console.warn('image paste save failed', e); }
       return;
@@ -440,7 +478,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
       const ext = (f.type.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '');
       try {
         const path = await saveBlobToClipboard(f, ext);
-        insertAtCursor(composerInput, (composerInput.value && !composerInput.value.endsWith('\n') ? '\n' : '') + path + '\n');
+        insertAtCursor(composerInput, (composerInput.value && !composerInput.value.endsWith('\n') ? '\n' : '') + `@${path}\n`);
         autoGrow();
       } catch (e) { console.warn('image drop save failed', e); }
     }
@@ -448,7 +486,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
 
   const term = new Terminal({
     cursorBlink: false,
-    fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
+    fontFamily: '"JetBrains Mono NF", Menlo, "SF Mono", Monaco, "Apple Symbols", "Apple Color Emoji", Consolas, monospace',
     fontSize: 13,
     theme: xtermTheme(),
     convertEol: true,
@@ -462,6 +500,12 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(termWrap);
+  // DOM renderer (xterm 5.x default): measures cells with the configured
+  // font but defers per-glyph rendering to the browser, which respects the
+  // full font-family fallback chain. Canvas/WebGL renderers were tried
+  // first but they cache glyph atlases at construction so PUA chars from
+  // claude code's TUI rendered as `?` substitutes even after the Nerd
+  // Font loaded.
   // xterm renders a `.xterm-helper-textarea` for IME / clipboard / paste
   // handling. Even with disableStdin: true it still captures keyboard
   // focus (the hidden textarea remains tabbable and click-focusable).
@@ -519,6 +563,20 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     noteStdoutFromAgent(code);
     const ent = state.ptys.get(key);
     if (ent) ent.lastStdoutAt = Date.now();
+    // Debug hook: capture codepoints outside basic ASCII so we can identify
+    // which exotic Unicode claude code is emitting on those divider lines.
+    // Open DevTools and run window.__yunomiaGlyphs to see frequencies.
+    try {
+      if (!window.__yunomiaGlyphs) window.__yunomiaGlyphs = {};
+      const s = String(evt.payload);
+      for (const ch of s) {
+        const cp = ch.codePointAt(0);
+        if (cp > 0x7f && cp !== 0x2026 && cp !== 0x2500 && cp !== 0x2502) {
+          const hex = 'U+' + cp.toString(16).toUpperCase().padStart(4, '0');
+          window.__yunomiaGlyphs[hex] = (window.__yunomiaGlyphs[hex] || 0) + 1;
+        }
+      }
+    } catch { /* no-op */ }
   });
   const unlistenExit = await listen(`pty://exit/${key}`, (evt) => {
     const code = evt.payload?.code ?? '?';
@@ -604,8 +662,13 @@ async function spawnAgent(code, model, cwd, opts = {}) {
       ent.kickoffFired = true;
       setTimeout(async () => {
         try {
-          await invoke('pty_write', { args: { id: key, data: kickoffContent } });
-          await new Promise((r) => setTimeout(r, 250));
+          // Explicit bracketed paste: every kickoff is multi-line markdown,
+          // so embedded \n must be newlines-within-input, not line-by-line
+          // submits. Then a typing-speed gap before the real CR so the TUI
+          // doesn't fold the CR into the paste auto-detect window.
+          const wrapped = `\x1b[200~${kickoffContent}\x1b[201~`;
+          await invoke('pty_write', { args: { id: key, data: wrapped } });
+          await new Promise((r) => setTimeout(r, 300));
           await invoke('pty_write', { args: { id: key, data: '\r' } });
         } catch (e) { console.warn('kickoff paste failed', e); }
       }, 2500);
@@ -1061,16 +1124,21 @@ async function renderProjectView() {
       reingestBtn.addEventListener('click', async () => {
         const cwdNow = state.selectedProject;
         if (!cwdNow) return;
-        let proposals = { tickets: [], agents: [] };
+        let proposals = { tickets: [], agents: [], diagnostics: [] };
         try { proposals = await invoke('proposals_read', { args: { cwd: cwdNow } }); }
         catch (e) { alert(`Couldn't read proposals: ${e}`); return; }
+        const diagText = (proposals.diagnostics || []).length
+          ? `\n\nIssues:\n  • ${proposals.diagnostics.join('\n  • ')}`
+          : '';
         if (!proposals.tickets.length && !proposals.agents.length) {
-          alert('No proposed-tickets.json / proposed-agents.json found for this project.\n\nLead writes these to <cwd>/.yunomia/. If your Lead claims it wrote tickets, ask it to re-write them to that exact path.');
+          alert(`No tickets or agents could be ingested.${diagText}\n\nLead writes proposed-tickets.json / proposed-agents.json to <cwd>/.yunomia/. If Lead claims it wrote tickets, ask it to re-write to that exact path with shape: [{"title": "...", "body_md": "...", "type": "...", "audience": "...", "assignee_agent": "..."}].`);
           return;
         }
-        if (!confirm(`Found ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s) to ingest. Continue?`)) return;
+        if (!confirm(`Found ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s) to ingest.${diagText}\n\nContinue?`)) return;
         let createdTickets = 0;
-        for (const pt of proposals.tickets) {
+        const ticketErrors = [];
+        for (let i = 0; i < proposals.tickets.length; i++) {
+          const pt = proposals.tickets[i];
           try {
             await invoke('tickets_create', { args: {
               cwd: cwdNow,
@@ -1082,7 +1150,11 @@ async function renderProjectView() {
               assigneeAgent: pt.assignee_agent || null,
             }});
             createdTickets += 1;
-          } catch (e) { console.warn('reingest ticket create failed', e); }
+          } catch (e) {
+            const msg = (e && (e.message || e.toString())) || String(e);
+            ticketErrors.push(`ticket[${i}] "${(pt.title || '').slice(0,60)}": ${msg}`);
+            console.warn('reingest ticket create failed', i, pt.title, e);
+          }
         }
         if (proposals.agents.length) {
           const agents = proposals.agents.map((a) => ({
@@ -1107,8 +1179,21 @@ async function renderProjectView() {
             } catch (e) { console.warn('scaffold failed', a.code, e); }
           }
         }
-        try { await invoke('proposals_clear', { args: { cwd: cwdNow } }); } catch {}
-        alert(`Ingested ${createdTickets} ticket(s) + ${proposals.agents.length} agent(s). Kanban will refresh.`);
+        // Only clear the source proposals files if EVERY ticket was created.
+        // Partial success would orphan the un-ingested entries; total failure
+        // (the v0.1.30 destructive bug) deleted Lead's only copy and left the
+        // user with nothing.
+        const allTicketsCreated = createdTickets === proposals.tickets.length;
+        if (allTicketsCreated) {
+          try { await invoke('proposals_clear', { args: { cwd: cwdNow } }); } catch {}
+        }
+        const errSection = ticketErrors.length
+          ? `\n\nFailed:\n  • ${ticketErrors.slice(0, 10).join('\n  • ')}${ticketErrors.length > 10 ? `\n  …(+${ticketErrors.length - 10} more)` : ''}`
+          : '';
+        const sourceNote = allTicketsCreated
+          ? '\n\nproposed-*.json cleared.'
+          : '\n\nproposed-*.json kept so Lead\'s work is not lost. Fix the errors and re-ingest.';
+        alert(`Ingested ${createdTickets} of ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s).${errSection}${sourceNote}`);
         await renderProjectView();
       });
     }
@@ -1258,17 +1343,52 @@ async function openSettings() {
     document.getElementById('settings-version').textContent = `Yunomia v${v}`;
   } catch { /* ignore */ }
   const upBtn = document.getElementById('settings-check-updates');
+  const upStatus = document.getElementById('settings-update-status');
   if (upBtn && !upBtn.dataset.bound) {
     upBtn.dataset.bound = '1';
+    const setStatus = (msg, kind) => {
+      if (!upStatus) return;
+      upStatus.textContent = msg || '';
+      upStatus.className = 'settings-update-status' + (kind ? ' status-' + kind : '');
+    };
+    const reset = () => { upBtn.disabled = false; upBtn.textContent = 'Check for updates'; };
+    const becomeInstall = (update) => {
+      upBtn.disabled = false;
+      upBtn.textContent = `Install v${update.version} & restart`;
+      upBtn.classList.add('btn-primary');
+      upBtn.classList.remove('btn-ghost');
+      setStatus(`Update available — released ${update.date ? update.date.slice(0, 10) : 'recently'}.`, 'available');
+      // Replace the click handler to install instead of re-check.
+      const installHandler = async () => {
+        upBtn.removeEventListener('click', installHandler);
+        upBtn.disabled = true;
+        try {
+          await installUpdate(update, (p) => {
+            if (p.stage === 'downloading')      upBtn.textContent = p.pct ? `Downloading ${p.pct}%` : 'Downloading…';
+            else if (p.stage === 'restarting')  upBtn.textContent = 'Restarting…';
+          });
+        } catch (err) {
+          setStatus('Update failed: ' + (err?.message || err), 'error');
+          reset();
+        }
+      };
+      upBtn.addEventListener('click', installHandler, { once: true });
+    };
     upBtn.addEventListener('click', async () => {
       upBtn.disabled = true;
-      upBtn.textContent = 'Checking...';
-      const res = await bootCheckForUpdates({ silent: false });
-      upBtn.disabled = false;
-      upBtn.textContent = 'Check for updates';
-      if (res.kind === 'error') alert('Update check failed: ' + res.error);
-      else if (res.kind === 'none') alert('You are on the latest version.');
-      // 'available' → the green banner is already showing.
+      upBtn.textContent = 'Checking…';
+      setStatus('', '');
+      // Skip the floating banner - we render the install UI inline here.
+      const res = await bootCheckForUpdates({ silent: false, showBanner: false });
+      if (res.kind === 'error') {
+        setStatus('Update check failed: ' + res.error, 'error');
+        reset();
+      } else if (res.kind === 'none') {
+        setStatus('You are on the latest version.', 'ok');
+        reset();
+      } else if (res.kind === 'available') {
+        becomeInstall(res.update);
+      }
     });
   }
   // Compliance kill-switch (project-scoped)
@@ -1422,8 +1542,12 @@ startGitCiPolling(() => state.selectedProject);
       const active = state.ptys.get(state.activePane);
       const target = active?.composer;
       if (!target) return;
+      // claude code reads files referenced by @<absolute-path> - bare paths
+      // are sent to the model as plain text and never attached. Images and
+      // any other dropped file should always go in via the @-prefix so the
+      // model actually receives the content.
       const lead = target.value && !target.value.endsWith('\n') ? '\n' : '';
-      const block = paths.map((p) => p).join('\n') + '\n';
+      const block = paths.map((p) => `@${p}`).join('\n') + '\n';
       insertAtCursor(target, lead + block);
       target.dispatchEvent(new Event('input'));
     });
@@ -1478,6 +1602,35 @@ function insertAtCursor(textarea, text) {
 }
 window.__applyTaxonomy = applyTaxonomyToForms;
 applyTaxonomyToForms();
+
+// Fill the new-ticket "Assignee" + spawn-modal "Agent code" dropdowns from
+// the project's actual proposed/upserted agents. Without this, the UI still
+// showed the legacy PrintPepper roster (AD/WA/DA/WD/TA/PETER) which had
+// nothing to do with the current project's brief.
+const AGENT_EMOJI_FALLBACK = { LEAD:'🧭', CEO:'🎯', SA:'🟧', AD:'🟦', WA:'🟪', DA:'🟨', QA:'🟥', WD:'🌐', TA:'🛠', FE:'💠', INT:'🔌', PETER:'🎩' };
+async function applyProjectAgentsToForms() {
+  const cwd = state.selectedProject;
+  if (!cwd) return;
+  let agents = [];
+  try { agents = await invoke('project_agents_list', { args: { cwd } }) || []; } catch { agents = []; }
+  const codes = agents.map((a) => a.code);
+  const nt = document.getElementById('nt-assignee');
+  if (nt) {
+    const current = nt.value;
+    nt.innerHTML = `<option value="">- unassigned</option>` + codes.map((c) =>
+      `<option value="${escapeHtmlAttr(c)}"${c === current ? ' selected' : ''}>${AGENT_EMOJI_FALLBACK[c] || ''} ${escapeHtmlAttr(c)}</option>`).join('');
+  }
+  const sp = document.getElementById('spawn-code');
+  if (sp) {
+    const current = sp.value;
+    // Always include LEAD so user can re-spawn the orchestrator if killed.
+    const spawnCodes = codes.includes('LEAD') ? codes : ['LEAD', ...codes];
+    sp.innerHTML = spawnCodes.map((c) =>
+      `<option value="${escapeHtmlAttr(c)}"${c === current ? ' selected' : ''}>${AGENT_EMOJI_FALLBACK[c] || ''} ${escapeHtmlAttr(c)}</option>`).join('');
+  }
+}
+window.__applyProjectAgents = applyProjectAgentsToForms;
+applyProjectAgentsToForms();
 
 // PH-134 Phase 2 - bridge to MC + auto-compact orchestrator.
 void initCompactOrchestrator();

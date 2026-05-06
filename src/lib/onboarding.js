@@ -89,10 +89,23 @@ onboarding interview. You will:
    - You can rewrite any file before approve; the operator always sees
      fresh counts.
 
+   MANDATORY VERIFICATION - after writing each file, run:
+     Bash:  ls -la ${cwd}/.yunomia/ && wc -l ${cwd}/.yunomia/proposed-*.json
+   and quote the output back to the user. Do NOT report "I wrote N tickets"
+   without this verification - the most common failure is silently failing
+   to write the file and then claiming success. If Bash shows a missing
+   file or zero bytes, retry the Write or tell the user the tool errored.
+
 4. Be a real lead, not a yes-bot:
    - Push back when scope is fuzzy.
    - Flag when the user is conflating goals with implementation.
    - Surface tradeoffs the user hasn't seen.
+
+5. Formatting: do NOT use markdown blockquotes (lines starting with `> `).
+   The Yunomia / claude code TUI renders `> ` identically to the user
+   input prompt, so blockquoted lines in your response look like
+   pre-filled user input and confuse the operator. Use plain prose,
+   bulleted lists, or fenced code blocks instead.
 
 Talk to the user now. Start with question 1.
 `;
@@ -204,11 +217,13 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
   const approveBtn = container.querySelector('#onb-approve');
   if (approveBtn) {
     approveBtn.addEventListener('click', async () => {
-      let proposals = { tickets: [], agents: [] };
+      let proposals = { tickets: [], agents: [], diagnostics: [] };
       try { proposals = await invoke('proposals_read', { args: { cwd } }); } catch {}
 
       // Loud validation: refuse to silently approve with 0 tickets when
-      // Lead claimed to write some. Show counts up-front.
+      // Lead claimed to write some. Show counts AND any per-entry skip
+      // reasons so the user can see "Lead wrote 13 tickets but 8 were
+      // missing 'title'" instead of a mute zero.
       const summary = [
         `Approve brief for "${projectName}" and switch to active mode?`,
         '',
@@ -216,6 +231,11 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
         `Found in proposed-agents.json: ${proposals.agents.length} agent(s)`,
         '',
       ];
+      if ((proposals.diagnostics || []).length) {
+        summary.push('Issues parsing Lead\'s proposals:');
+        for (const d of proposals.diagnostics) summary.push(`  • ${d}`);
+        summary.push('');
+      }
       if (proposals.tickets.length === 0) {
         summary.push('⚠ No tickets proposed. Lead may have skipped writing the file.');
         summary.push('   You can still approve - tickets can be added manually later.');
@@ -224,7 +244,10 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
       summary.push('Continue?');
       if (!confirm(summary.join('\n'))) return;
 
-      for (const pt of proposals.tickets) {
+      let approveCreated = 0;
+      const approveErrors = [];
+      for (let i = 0; i < proposals.tickets.length; i++) {
+        const pt = proposals.tickets[i];
         try {
           await invoke('tickets_create', { args: { cwd,
             title: pt.title || '(untitled)',
@@ -234,7 +257,12 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
             audience: pt.audience || 'admin',
             assigneeAgent: pt.assignee_agent || null,
           }});
-        } catch (err) { console.warn('proposed ticket create failed', err); }
+          approveCreated += 1;
+        } catch (err) {
+          const msg = (err && (err.message || err.toString())) || String(err);
+          approveErrors.push(`ticket[${i}] "${(pt.title || '').slice(0,60)}": ${msg}`);
+          console.warn('proposed ticket create failed', i, pt.title, err);
+        }
       }
 
       // Snapshot the brief once; we'll use a trimmed excerpt to seed each
@@ -268,7 +296,12 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
           } catch (err) { console.warn('scaffold failed', a.code, err); }
         }
       }
-      try { await invoke('proposals_clear', { args: { cwd } }); } catch {}
+      // Only clear proposals if every ticket made it in. Otherwise Lead's
+      // file is the only copy of the un-ingested entries.
+      const allTicketsCreated = approveCreated === proposals.tickets.length;
+      if (allTicketsCreated) {
+        try { await invoke('proposals_clear', { args: { cwd } }); } catch {}
+      }
 
       // Auto-spawn the proposed heartbeat agents (orchestrators).
       // on-assignment workers stay dormant until a ticket lands.
@@ -282,8 +315,12 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
         } catch (err) { console.warn('auto-spawn failed', a.code, err); }
       }
       await approveBrief(cwd);
-      // Final summary - what actually happened.
-      alert(`Approved.\n\nCreated: ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s).\nAuto-spawned ${heartbeatAgents.filter((a) => a.code !== 'LEAD').length} heartbeat agent(s).`);
+      // Final summary - what actually happened, including any failures.
+      const errSection = approveErrors.length
+        ? `\n\nFailed:\n  • ${approveErrors.slice(0, 10).join('\n  • ')}${approveErrors.length > 10 ? `\n  …(+${approveErrors.length - 10} more)` : ''}`
+        : '';
+      const sourceNote = allTicketsCreated ? '' : '\n\nproposed-*.json kept so Lead\'s work is not lost.';
+      alert(`Approved.\n\nCreated: ${approveCreated} of ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s).\nAuto-spawned ${heartbeatAgents.filter((a) => a.code !== 'LEAD').length} heartbeat agent(s).${errSection}${sourceNote}`);
       onApproved && onApproved();
       return;
     });

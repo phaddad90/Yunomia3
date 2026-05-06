@@ -28,6 +28,7 @@ pub struct DirEntry {
 const SKIP: &[&str] = &[".git", "node_modules", "dist", "target", ".venv", "__pycache__", ".next", ".cache"];
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ListDirArgs {
     pub cwd: String,
     pub rel_path: Option<String>,    // relative to cwd, default ""

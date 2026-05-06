@@ -1,6 +1,6 @@
 {
   "name": "yunomia",
-  "version": "0.1.22",
+  "version": "0.1.35",
   "private": true,
   "type": "module",
   "description": "Yunomia - Tauri shell for hosting Claude Code agent fleets on any project.",
@@ -18,9 +18,10 @@
   "dependencies": {
     "@tauri-apps/api": "^2.1.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
-    "@tauri-apps/plugin-updater": "^2.0.0",
     "@tauri-apps/plugin-process": "^2.0.0",
-    "@xterm/xterm": "^5.5.0",
-    "@xterm/addon-fit": "^0.10.0"
+    "@tauri-apps/plugin-updater": "^2.0.0",
+    "@xterm/addon-canvas": "^0.7.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0"
   }
 }
