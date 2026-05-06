@@ -161,7 +161,14 @@ pub struct ClaudeStatus { pub found: bool, pub path: String }
 #[tauri::command]
 pub fn claude_status() -> ClaudeStatus {
     let path = resolve_command_path("claude");
-    let found = path.starts_with('/') && std::path::Path::new(&path).exists();
+    // Resolved path is "found" when:
+    //   - resolution returned more than the bare name (i.e. an actual file
+    //     path, absolute on either Unix or Windows), AND
+    //   - that path exists on disk
+    // The previous `path.starts_with('/')` check rejected all valid Windows
+    // paths (which start with a drive letter, e.g. C:\Users\...\claude.cmd).
+    let resolved = path != "claude";
+    let found = resolved && std::path::Path::new(&path).exists();
     ClaudeStatus { found, path }
 }
 
