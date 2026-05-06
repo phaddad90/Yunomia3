@@ -491,12 +491,26 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     theme: xtermTheme(),
     convertEol: true,
     scrollback: 10_000,
-    // The composer textarea below is the single input target. Stops xterm
-    // from intercepting keystrokes when the terminal area happens to have
-    // focus, which previously meant the user could accidentally type into
-    // both places at once.
-    disableStdin: true,
+    // disableStdin: true was used previously to keep keystrokes routed to
+    // the composer textarea instead of being captured by xterm. Side effect
+    // discovered 2026-05-06 during Windows dogfood: it ALSO blocks xterm's
+    // built-in responses to terminal protocol queries (DSR-CPR \x1b[6n,
+    // primary device attributes, etc.) that claude's TUI emits and waits
+    // on. With disableStdin: true, claude's first \x1b[6n query goes
+    // unanswered, claude blocks indefinitely, no echo and no replies.
+    // Solution: re-enable stdin so xterm's auto-responder fires, AND
+    // filter user keystrokes via attachCustomKeyEventHandler so the
+    // composer remains the single user-input path.
+    disableStdin: false,
   });
+  // Block ALL keyboard events from reaching xterm's input pipeline. Returns
+  // false to xterm = "don't process this key, don't fire onData for it".
+  // The composer textarea (a separate HTML element) is the user-input path.
+  // xterm still emits onData for terminal protocol responses (DSR replies)
+  // because those don't go through the keyboard handler — they come from
+  // xterm's internal parser responding to escape codes received via
+  // term.write().
+  term.attachCustomKeyEventHandler(() => false);
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(termWrap);
