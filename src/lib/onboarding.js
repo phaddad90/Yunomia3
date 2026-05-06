@@ -5,6 +5,7 @@
 // "Approve brief - go active" and the dashboard flips to kanban mode.
 
 import { invoke } from '@tauri-apps/api/core';
+import { ask } from '@tauri-apps/plugin-dialog';
 
 const FOUNDER_KICKOFF = (projectName, cwd, briefPath) => `\
 You are the LEAD agent for a brand-new Yunomia project.
@@ -242,7 +243,14 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
         summary.push('');
       }
       summary.push('Continue?');
-      if (!confirm(summary.join('\n'))) return;
+      // Use Tauri's plugin-dialog `ask()` instead of native window.confirm().
+      // window.confirm() is intercepted by Tauri's WebView2 (Windows) and
+      // routed to a non-existent dialog.confirm command, throwing
+      // "Command not found". macOS WebKit handled native confirm() natively
+      // so this never surfaced. Tauri's ask() is the cross-platform-safe
+      // equivalent and uses the dialog:allow-ask permission already granted.
+      const ok = await ask(summary.join('\n'), { title: 'Approve brief?' });
+      if (!ok) return;
 
       let approveCreated = 0;
       const approveErrors = [];
