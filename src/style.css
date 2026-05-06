@@ -615,9 +615,23 @@ body {
 
 /* Agents config */
 .agents-cfg { padding: 12px; }
-.agents-cfg header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.agents-cfg header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 12px; flex-wrap: wrap; }
 .agents-cfg h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-mid); margin: 0; }
-.agents-cfg #agents-add { padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; }
+.agents-add-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.agents-add-row #agents-add,
+.agents-add-row #agents-add-custom {
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px;
+  background: var(--surface-2); color: var(--text-hi);
+}
+.agents-add-row #agents-add-custom { width: 200px; text-transform: uppercase; }
+.agents-add-row #agents-add-custom-btn { font-size: 12px; padding: 4px 12px; }
+.agent-cfg-note { width: 100%; }
+.agent-cfg-note textarea[data-field="note"] {
+  font: inherit; font-size: 12px; padding: 6px 8px; text-transform: none; letter-spacing: 0; font-weight: 400;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); color: var(--text-hi);
+  width: 100%; resize: vertical; min-height: 44px;
+}
+.agent-cfg-note .muted { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-low); font-size: 10px; margin-left: 4px; }
 .agents-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
 .agent-cfg-row { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 .agent-cfg-row > header { padding: 0 0 8px; border-bottom: 1px solid var(--border); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
