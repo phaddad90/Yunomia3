@@ -239,8 +239,36 @@ fn spawn_inner(
     })?;
 
     let resolved = resolve_command_path(&args.command);
-    let mut cmd = CommandBuilder::new(&resolved);
-    for a in &args.args {
+
+    // On Windows, .cmd / .bat files spawned directly through portable-pty +
+    // ConPTY have a known stdout-piping bug: cmd.exe (the .cmd interpreter)
+    // gets the ConPTY but the children IT spawns (e.g. node running the
+    // claude CLI from claude.cmd) write to a different stream that doesn't
+    // pipe back through the master reader. Symptom: terminal pane shows the
+    // initial prompt then goes silent — no echo of user input, no replies,
+    // even though the child process is alive and processing.
+    //
+    // Fix: explicitly wrap through `cmd.exe /c <script> <args>` so cmd.exe
+    // is the ConPTY-attached process AND remains the parent of any node /
+    // python / etc. children, which then inherit cmd.exe's stdout pipe
+    // (ConPTY) correctly.
+    #[cfg(target_os = "windows")]
+    let (spawn_command, spawn_args): (String, Vec<String>) = {
+        let lower = resolved.to_lowercase();
+        if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+            let mut wrapped = vec!["/c".to_string(), resolved.clone()];
+            wrapped.extend(args.args.iter().cloned());
+            ("cmd.exe".to_string(), wrapped)
+        } else {
+            (resolved.clone(), args.args.clone())
+        }
+    };
+    #[cfg(not(target_os = "windows"))]
+    let (spawn_command, spawn_args): (String, Vec<String>) =
+        (resolved.clone(), args.args.clone());
+
+    let mut cmd = CommandBuilder::new(&spawn_command);
+    for a in &spawn_args {
         cmd.arg(a);
     }
     if let Some(cwd) = &args.cwd {
