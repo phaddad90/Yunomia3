@@ -8,6 +8,7 @@
 
 use crate::store;
 use anyhow::Result;
+#[cfg(not(target_os = "windows"))]
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -25,6 +26,11 @@ use tauri::{Emitter, State};
 // (MCP servers via npx, the native installer's helper at ~/.local/bin, etc.)
 // - they all need PATH inherited via the pty's env, not the .app's minimal
 // PATH from launchd.
+//
+// Windows doesn't need this — it inherits parent PATH directly (see pty_spawn
+// PATH inheritance block). The static is gated so it doesn't compile on
+// Windows where it would build invalid Unix-style paths.
+#[cfg(not(target_os = "windows"))]
 static LOGIN_SHELL_PATH: Lazy<String> = Lazy::new(|| {
     let home = std::env::var("HOME").unwrap_or_default();
     let mut dirs: Vec<String> = vec![
@@ -69,13 +75,21 @@ static LOGIN_SHELL_PATH: Lazy<String> = Lazy::new(|| {
 });
 
 // Resolve `claude` (or any other binary installed via npm/brew/bun/volta) when
-// the .app is launched from Finder. macOS gives Finder-launched apps a minimal
-// PATH; the user's shell PATH (~/.zshrc etc.) is not applied. Strategy:
-//   1. Absolute path? Trust it.
-//   2. Search common install locations.
-//   3. Ask the user's login shell via `<shell> -lc 'which <cmd>'`.
-//   4. Fall through with the bare name (lets portable-pty try its own PATH).
+// the .app is launched from Finder/Explorer. macOS gives Finder-launched apps
+// a minimal PATH; the user's shell PATH (~/.zshrc etc.) is not applied. Windows
+// has a different problem: npm installs both `claude` (extension-less bash
+// script) and `claude.cmd` (Windows wrapper) into AppData\Roaming\npm\, and
+// CreateProcessW will try to run `claude` (no extension) as a PE binary,
+// failing with error 193 ("not a valid Win32 application"). We must explicitly
+// resolve the .cmd / .exe extension on Windows.
+
+#[cfg(not(target_os = "windows"))]
 pub fn resolve_command_path(command: &str) -> String {
+    // Strategy on Unix:
+    //   1. Absolute path? Trust it.
+    //   2. Search common install locations.
+    //   3. Ask the user's login shell via `<shell> -lc 'which <cmd>'`.
+    //   4. Fall through with the bare name (lets portable-pty try its own PATH).
     if command.starts_with('/') { return command.to_string(); }
     let home = std::env::var("HOME").unwrap_or_default();
     let candidates: Vec<PathBuf> = vec![
@@ -99,6 +113,41 @@ pub fn resolve_command_path(command: &str) -> String {
                 let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if !s.is_empty() && PathBuf::from(&s).exists() {
                     return s;
+                }
+            }
+        }
+    }
+    command.to_string()
+}
+
+#[cfg(target_os = "windows")]
+pub fn resolve_command_path(command: &str) -> String {
+    // Strategy on Windows:
+    //   1. Already absolute (drive-letter or UNC)? Trust it.
+    //   2. Walk PATH dirs, try each PATHEXT extension in order. .CMD wrappers
+    //      from npm are preferred over the extension-less bash script of the
+    //      same basename (which CreateProcessW can't run anyway — error 193).
+    //   3. Fall through with the bare name as a last resort.
+    let chars: Vec<char> = command.chars().collect();
+    let is_absolute = (chars.len() > 1 && chars.get(1) == Some(&':'))
+        || command.starts_with('\\')
+        || command.starts_with('/');
+    if is_absolute {
+        return command.to_string();
+    }
+    let exts: Vec<String> = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string())
+        .split(';')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in path_var.split(';') {
+            if dir.is_empty() { continue; }
+            for ext in &exts {
+                let candidate = PathBuf::from(dir).join(format!("{}{}", command, ext));
+                if candidate.is_file() {
+                    return candidate.to_string_lossy().into_owned();
                 }
             }
         }
