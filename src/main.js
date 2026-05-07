@@ -1630,13 +1630,31 @@ applyTaxonomyToForms();
 // the project's actual proposed/upserted agents. Without this, the UI still
 // showed the legacy PrintPepper roster (AD/WA/DA/WD/TA/PETER) which had
 // nothing to do with the current project's brief.
-const AGENT_EMOJI_FALLBACK = { LEAD:'🧭', CEO:'🎯', SA:'🟧', AD:'🟦', WA:'🟪', DA:'🟨', QA:'🟥', WD:'🌐', TA:'🛠', FE:'💠', INT:'🔌', PETER:'🎩' };
+const AGENT_EMOJI_FALLBACK = {
+  LEAD:'🧭', CEO:'🎯', SA:'🟧', AD:'🟦', WA:'🟪', DA:'🟨', QA:'🟥', WD:'🌐', TA:'🛠',
+  FE:'💠', INT:'🔌', PETER:'🎩',
+  PLANNING:'🗺️', ADS:'📢', SEO:'🔍', CRM:'🤝', MERCHANT:'🛒',
+  PRINTKITS:'🎨', DESIGN:'🖌', SALES:'💼', SUPPORT:'🛟',
+};
+// Truncate a long note to a single short, dropdown-friendly summary. Splits
+// on the first sentence terminator or newline, then caps the result so long
+// scope-defining notes don't blow out the option width.
+function noteSummary(note) {
+  if (!note) return '';
+  const first = String(note).split(/[.\n]/)[0].trim();
+  if (!first) return '';
+  return first.length > 60 ? first.slice(0, 57) + '…' : first;
+}
 async function applyProjectAgentsToForms() {
   const cwd = state.selectedProject;
   if (!cwd) return;
   let agents = [];
   try { agents = await invoke('project_agents_list', { args: { cwd } }) || []; } catch { agents = []; }
   const codes = agents.map((a) => a.code);
+  // Map code -> note for label decoration. Spawn modal uses descriptive
+  // labels so users can tell PLANNING from MERCHANT without memorising
+  // every project's coined codes.
+  const noteByCode = Object.fromEntries(agents.map((a) => [a.code, noteSummary(a.note)]));
   const nt = document.getElementById('nt-assignee');
   if (nt) {
     const current = nt.value;
@@ -1648,8 +1666,11 @@ async function applyProjectAgentsToForms() {
     const current = sp.value;
     // Always include LEAD so user can re-spawn the orchestrator if killed.
     const spawnCodes = codes.includes('LEAD') ? codes : ['LEAD', ...codes];
-    sp.innerHTML = spawnCodes.map((c) =>
-      `<option value="${escapeHtmlAttr(c)}"${c === current ? ' selected' : ''}>${AGENT_EMOJI_FALLBACK[c] || ''} ${escapeHtmlAttr(c)}</option>`).join('');
+    sp.innerHTML = spawnCodes.map((c) => {
+      const desc = noteByCode[c];
+      const label = desc ? `${AGENT_EMOJI_FALLBACK[c] || ''} ${c} — ${desc}` : `${AGENT_EMOJI_FALLBACK[c] || ''} ${c}`;
+      return `<option value="${escapeHtmlAttr(c)}"${c === current ? ' selected' : ''}>${escapeHtmlAttr(label)}</option>`;
+    }).join('');
   }
 }
 window.__applyProjectAgents = applyProjectAgentsToForms;
