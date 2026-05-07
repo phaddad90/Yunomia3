@@ -26,7 +26,7 @@ use tauri::{Emitter, State};
 // - they all need PATH inherited via the pty's env, not the .app's minimal
 // PATH from launchd.
 static LOGIN_SHELL_PATH: Lazy<String> = Lazy::new(|| {
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = crate::store::home_dir().to_string_lossy().to_string();
     let mut dirs: Vec<String> = vec![
         "/usr/local/bin".into(),
         "/opt/homebrew/bin".into(),
@@ -77,7 +77,7 @@ static LOGIN_SHELL_PATH: Lazy<String> = Lazy::new(|| {
 //   4. Fall through with the bare name (lets portable-pty try its own PATH).
 pub fn resolve_command_path(command: &str) -> String {
     if command.starts_with('/') { return command.to_string(); }
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = crate::store::home_dir().to_string_lossy().to_string();
     let candidates: Vec<PathBuf> = vec![
         PathBuf::from("/usr/local/bin").join(command),
         PathBuf::from("/opt/homebrew/bin").join(command),
