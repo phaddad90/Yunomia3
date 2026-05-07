@@ -8,6 +8,7 @@
 
 use crate::store;
 use anyhow::Result;
+#[cfg(not(target_os = "windows"))]
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -25,6 +26,11 @@ use tauri::{Emitter, State};
 // (MCP servers via npx, the native installer's helper at ~/.local/bin, etc.)
 // - they all need PATH inherited via the pty's env, not the .app's minimal
 // PATH from launchd.
+//
+// Windows doesn't need this — it inherits parent PATH directly (see pty_spawn
+// PATH inheritance block). The static is gated so it doesn't compile on
+// Windows where it would build invalid Unix-style paths.
+#[cfg(not(target_os = "windows"))]
 static LOGIN_SHELL_PATH: Lazy<String> = Lazy::new(|| {
     let home = crate::store::home_dir().to_string_lossy().to_string();
     let mut dirs: Vec<String> = vec![
@@ -69,13 +75,21 @@ static LOGIN_SHELL_PATH: Lazy<String> = Lazy::new(|| {
 });
 
 // Resolve `claude` (or any other binary installed via npm/brew/bun/volta) when
-// the .app is launched from Finder. macOS gives Finder-launched apps a minimal
-// PATH; the user's shell PATH (~/.zshrc etc.) is not applied. Strategy:
-//   1. Absolute path? Trust it.
-//   2. Search common install locations.
-//   3. Ask the user's login shell via `<shell> -lc 'which <cmd>'`.
-//   4. Fall through with the bare name (lets portable-pty try its own PATH).
+// the .app is launched from Finder/Explorer. macOS gives Finder-launched apps
+// a minimal PATH; the user's shell PATH (~/.zshrc etc.) is not applied. Windows
+// has a different problem: npm installs both `claude` (extension-less bash
+// script) and `claude.cmd` (Windows wrapper) into AppData\Roaming\npm\, and
+// CreateProcessW will try to run `claude` (no extension) as a PE binary,
+// failing with error 193 ("not a valid Win32 application"). We must explicitly
+// resolve the .cmd / .exe extension on Windows.
+
+#[cfg(not(target_os = "windows"))]
 pub fn resolve_command_path(command: &str) -> String {
+    // Strategy on Unix:
+    //   1. Absolute path? Trust it.
+    //   2. Search common install locations.
+    //   3. Ask the user's login shell via `<shell> -lc 'which <cmd>'`.
+    //   4. Fall through with the bare name (lets portable-pty try its own PATH).
     if command.starts_with('/') { return command.to_string(); }
     let home = crate::store::home_dir().to_string_lossy().to_string();
     let candidates: Vec<PathBuf> = vec![
@@ -106,13 +120,55 @@ pub fn resolve_command_path(command: &str) -> String {
     command.to_string()
 }
 
+#[cfg(target_os = "windows")]
+pub fn resolve_command_path(command: &str) -> String {
+    // Strategy on Windows:
+    //   1. Already absolute (drive-letter or UNC)? Trust it.
+    //   2. Walk PATH dirs, try each PATHEXT extension in order. .CMD wrappers
+    //      from npm are preferred over the extension-less bash script of the
+    //      same basename (which CreateProcessW can't run anyway — error 193).
+    //   3. Fall through with the bare name as a last resort.
+    let chars: Vec<char> = command.chars().collect();
+    let is_absolute = (chars.len() > 1 && chars.get(1) == Some(&':'))
+        || command.starts_with('\\')
+        || command.starts_with('/');
+    if is_absolute {
+        return command.to_string();
+    }
+    let exts: Vec<String> = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string())
+        .split(';')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in path_var.split(';') {
+            if dir.is_empty() { continue; }
+            for ext in &exts {
+                let candidate = PathBuf::from(dir).join(format!("{}{}", command, ext));
+                if candidate.is_file() {
+                    return candidate.to_string_lossy().into_owned();
+                }
+            }
+        }
+    }
+    command.to_string()
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ClaudeStatus { pub found: bool, pub path: String }
 
 #[tauri::command]
 pub fn claude_status() -> ClaudeStatus {
     let path = resolve_command_path("claude");
-    let found = path.starts_with('/') && std::path::Path::new(&path).exists();
+    // Resolved path is "found" when:
+    //   - resolution returned more than the bare name (i.e. an actual file
+    //     path, absolute on either Unix or Windows), AND
+    //   - that path exists on disk
+    // The previous `path.starts_with('/')` check rejected all valid Windows
+    // paths (which start with a drive letter, e.g. C:\Users\...\claude.cmd).
+    let resolved = path != "claude";
+    let found = resolved && std::path::Path::new(&path).exists();
     ClaudeStatus { found, path }
 }
 
@@ -183,8 +239,36 @@ fn spawn_inner(
     })?;
 
     let resolved = resolve_command_path(&args.command);
-    let mut cmd = CommandBuilder::new(&resolved);
-    for a in &args.args {
+
+    // On Windows, .cmd / .bat files spawned directly through portable-pty +
+    // ConPTY have a known stdout-piping bug: cmd.exe (the .cmd interpreter)
+    // gets the ConPTY but the children IT spawns (e.g. node running the
+    // claude CLI from claude.cmd) write to a different stream that doesn't
+    // pipe back through the master reader. Symptom: terminal pane shows the
+    // initial prompt then goes silent — no echo of user input, no replies,
+    // even though the child process is alive and processing.
+    //
+    // Fix: explicitly wrap through `cmd.exe /c <script> <args>` so cmd.exe
+    // is the ConPTY-attached process AND remains the parent of any node /
+    // python / etc. children, which then inherit cmd.exe's stdout pipe
+    // (ConPTY) correctly.
+    #[cfg(target_os = "windows")]
+    let (spawn_command, spawn_args): (String, Vec<String>) = {
+        let lower = resolved.to_lowercase();
+        if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+            let mut wrapped = vec!["/c".to_string(), resolved.clone()];
+            wrapped.extend(args.args.iter().cloned());
+            ("cmd.exe".to_string(), wrapped)
+        } else {
+            (resolved.clone(), args.args.clone())
+        }
+    };
+    #[cfg(not(target_os = "windows"))]
+    let (spawn_command, spawn_args): (String, Vec<String>) =
+        (resolved.clone(), args.args.clone());
+
+    let mut cmd = CommandBuilder::new(&spawn_command);
+    for a in &spawn_args {
         cmd.arg(a);
     }
     if let Some(cwd) = &args.cwd {
@@ -194,7 +278,21 @@ fn spawn_inner(
     // children (MCP servers, the native installer's helper, etc.) can find
     // npm/brew/bun/volta-installed binaries when the .app is launched from
     // Finder. The frontend's optional env override wins on duplicate keys.
+    //
+    // On Windows, LOGIN_SHELL_PATH is built from Unix-only paths
+    // (/usr/local/bin, ~/.npm-global/bin etc.) which don't exist on Windows
+    // and would override the inherited PATH that does contain the user's
+    // npm/cargo/bun install dirs. So on Windows we inherit the parent
+    // process PATH (which Yunomia3 sees because it was launched from
+    // Explorer / shortcut / shell, all of which inherit the user's PATH).
+    #[cfg(not(target_os = "windows"))]
     cmd.env("PATH", LOGIN_SHELL_PATH.as_str());
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(parent_path) = std::env::var("PATH") {
+            cmd.env("PATH", parent_path);
+        }
+    }
     if let Some(env) = &args.env {
         for (k, v) in env {
             cmd.env(k, v);

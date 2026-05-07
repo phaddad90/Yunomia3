@@ -137,8 +137,10 @@ function bindAddProjectModal() {
       if (!picked) return;
       $('#proj-path').value = String(picked);
       // Default the name from the basename if user hasn't typed one.
+      // Split on either separator so Windows paths (C:\foo\bar) and Unix
+      // paths (/foo/bar) both yield the basename.
       if (!$('#proj-name').value.trim()) {
-        const parts = String(picked).split('/').filter(Boolean);
+        const parts = String(picked).split(/[\/\\]/).filter(Boolean);
         $('#proj-name').value = parts[parts.length - 1] || '';
       }
     } catch (err) {
@@ -147,9 +149,16 @@ function bindAddProjectModal() {
   });
   $('#project-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const path = $('#proj-path').value.trim().replace(/\/+$/, '');
+    const path = $('#proj-path').value.trim().replace(/[\/\\]+$/, '');
     if (!path) return;
-    if (!path.startsWith('/')) { alert('Use an absolute path (must start with /)'); return; }
+    // Accept Unix absolute paths (start with /) OR Windows absolute paths
+    // (drive letter followed by colon then a separator, e.g. C:\foo or D:/bar).
+    const isUnixAbs = path.startsWith('/');
+    const isWinAbs = /^[A-Za-z]:[\/\\]/.test(path);
+    if (!isUnixAbs && !isWinAbs) {
+      alert('Use an absolute path. Examples: /Users/me/project (macOS/Linux) or C:\\Users\\me\\project (Windows)');
+      return;
+    }
     if (!state.projects.includes(path)) state.projects.push(path);
     state.selectedProject = path;
     saveProjects();

@@ -5520,7 +5520,7 @@ dependencies = [
 
 [[package]]
 name = "yunomia"
-version = "0.1.35"
+version = "0.1.22"
 dependencies = [
  "anyhow",
  "chrono",
