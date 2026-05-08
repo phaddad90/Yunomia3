@@ -1,12 +1,22 @@
 // PH-134 Phase 2 - file-backed sticky-model store + sentinel watcher.
 
 use anyhow::Result;
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+
+// Serialise concurrent agent_session_record calls per project so that the
+// "claim a JSONL" step is atomic. Without this, three agents spawning in
+// rapid succession (boot reconcile of in-flight tickets) all read the same
+// agent-sessions.json before any of them write, all see the same newest
+// JSONL since spawn, and all claim it — every tab then reports the same
+// context % from the same shared file.
+static SESSION_CLAIM_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 // Cross-platform home directory resolution. On Windows HOME is not set by
 // default, and Tauri does not inject it; without USERPROFILE fallback, all
@@ -310,11 +320,35 @@ pub struct AgentSessionRecordArgs {
 
 #[tauri::command]
 pub fn agent_session_record(args: AgentSessionRecordArgs) -> Result<String, String> {
-    let session_id = if let Some(sid) = args.session_id.filter(|s| !s.is_empty()) {
+    // Hold the claim lock across read+pick+write so concurrent spawns can't
+    // each claim the same "newest" JSONL.
+    let _guard = SESSION_CLAIM_LOCK.lock();
+
+    let op_dir = yunomia_project_op_dir(&args.cwd)?;
+    fs::create_dir_all(&op_dir).map_err(|e| e.to_string())?;
+    let pin_path = op_dir.join("agent-sessions.json");
+    let mut map: HashMap<String, String> = if pin_path.exists() {
+        fs::read_to_string(&pin_path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+    } else { HashMap::new() };
+
+    // Already-claimed session_ids belonging to OTHER agents in this project.
+    // Anything in this set is excluded from discovery — that's the fix for
+    // the "every tab shows the same %" race.
+    let claimed_by_others: std::collections::HashSet<String> = map
+        .iter()
+        .filter(|(code, _)| code.as_str() != args.agent_code.as_str())
+        .map(|(_, sid)| sid.clone())
+        .collect();
+
+    let session_id = if let Some(sid) = args.session_id.clone().filter(|s| !s.is_empty()) {
+        // Explicit pin (e.g. --resume passed). Trust the caller — they parsed
+        // the session id from somewhere authoritative.
         sid
     } else {
         // Discovery path: scan claude-code's project dir for the newest JSONL
-        // whose mtime is after `since_ms` (i.e. created since this agent spawned).
+        // whose mtime is after `since_ms` (i.e. created since this agent
+        // spawned) AND whose session_id has not already been claimed by
+        // another agent on this project.
         let proj_dir = claude_project_dir(&args.cwd)?;
         if !proj_dir.exists() { return Err("no claude-code project dir yet; spawn hasn't materialised".into()); }
         let since = args.since_ms.unwrap_or(0);
@@ -322,6 +356,8 @@ pub fn agent_session_record(args: AgentSessionRecordArgs) -> Result<String, Stri
         for entry in fs::read_dir(&proj_dir).map_err(|e| e.to_string())?.flatten() {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) != Some("jsonl") { continue; }
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+            if claimed_by_others.contains(&stem) { continue; }
             let mtime_ms = entry.metadata().ok()
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
@@ -331,19 +367,14 @@ pub fn agent_session_record(args: AgentSessionRecordArgs) -> Result<String, Stri
             let take = newest.as_ref().map(|(_, t)| mtime_ms > *t).unwrap_or(true);
             if take { newest = Some((path, mtime_ms)); }
         }
-        let path = newest.ok_or_else(|| "no JSONL found newer than the spawn timestamp; did the agent get any output yet?".to_string())?.0;
+        let path = newest.ok_or_else(|| "no unclaimed JSONL found newer than the spawn timestamp; did the agent get any output yet?".to_string())?.0;
         path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()
     };
     if session_id.is_empty() { return Err("derived session_id was empty".into()); }
-    let op_dir = yunomia_project_op_dir(&args.cwd)?;
-    fs::create_dir_all(&op_dir).map_err(|e| e.to_string())?;
-    let path = op_dir.join("agent-sessions.json");
-    let mut map: std::collections::HashMap<String, String> = if path.exists() {
-        fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
-    } else { std::collections::HashMap::new() };
+
     map.insert(args.agent_code, session_id.clone());
     let raw = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
-    fs::write(&path, raw).map_err(|e| e.to_string())?;
+    fs::write(&pin_path, raw).map_err(|e| e.to_string())?;
     Ok(session_id)
 }
 
