@@ -20,7 +20,7 @@ import { renderFileTree, openPath, revealPath, copyPath, showContextMenu } from 
 import { renderCredentials } from './lib/credentials.js';
 import { renderDeploys } from './lib/deploys.js';
 import { startGitCiPolling, refreshGit, refreshCi } from './lib/git-ci.js';
-import { writeToAgent, startMcBridge } from './lib/mc-bridge.js';
+import { writeToAgent, startMcBridge, setAgentPtyResolver } from './lib/mc-bridge.js';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { bootCheckForUpdates, installUpdate } from './lib/updater.js';
 import { getVersion } from '@tauri-apps/api/app';
@@ -353,7 +353,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   tabBtn.dataset.pane = key;
   tabBtn.dataset.cwd = cwd;
   tabBtn.dataset.code = code;
-  tabBtn.innerHTML = `<span class="status-dot" data-status="idle"></span><span class="tab-emoji">${tabEmoji(code)}</span> ${code} <span class="cw-slot"></span> <span class="tab-close" title="Kill" data-kill="1">×</span>`;
+  tabBtn.innerHTML = `<span class="tab-emoji">${tabEmoji(code)}</span> ${code} <span class="cw-slot"></span> <span class="tab-close" title="Kill" data-kill="1">×</span>`;
   tabBtn.addEventListener('click', (e) => {
     if (e.target.dataset.kill) { void killPty(key); return; }
     setActivePane(key);
@@ -948,22 +948,29 @@ function renderAgentRail() {
   } else {
     let stats;
     try { stats = getTicketStats(); } catch { stats = { byAgent: {} }; }
+    const noteByCode = state.agentNoteByCode || {};
     const list = running.map(({ key, ent }) => {
       const code = ent.code;
       const { state: stat, label } = deriveStatus(ent);
       const ticketCount = stats.byAgent[code] || 0;
       const ticketBadge = ticketCount > 0 ? `<span class="ar-tickets" title="${ticketCount} open ticket${ticketCount===1?'':'s'}">${ticketCount}</span>` : '';
-      return `<li class="ar-row ar-${stat}" data-code="${code}" data-key="${key}">
+      // Full name (first sentence of the agent's `note`) shown alongside the
+      // short code so the operator doesn't have to memorise FE / SA / INT.
+      // Falls back to just the code when no note exists.
+      const fullName = noteByCode[code] || '';
+      const codeBlock = fullName
+        ? `<span class="ar-code">${code} ${ticketBadge}</span><span class="ar-fullname" title="${escapeHtml(fullName)}">${escapeHtml(fullName)}</span>`
+        : `<span class="ar-code">${code} ${ticketBadge}</span>`;
+      return `<li class="ar-row ar-${stat}" data-code="${code}" data-key="${key}" title="${escapeHtml(stat)}">
         <span class="ar-emoji">${tabEmoji(code)}</span>
         <div class="ar-mid">
-          <span class="ar-code">${code} ${ticketBadge}</span>
+          ${codeBlock}
           <span class="ar-label">${escapeHtml(label)} ${contextChipHtml(ent.contextEstimate)}</span>
           <span class="ar-cmpct-row">
             <button class="ar-cmpct" data-act="precompact" title="Run /pre-compact">PRE</button>
             <button class="ar-cmpct" data-act="compact" title="Run /compact">CMPCT</button>
           </span>
         </div>
-        <span class="ar-dot" data-status="${stat}"></span>
         <button class="ar-action" data-act="open" title="Open tab">↗</button>
         <button class="ar-action ar-kill" data-act="kill" title="Kill">✕</button>
       </li>`;
@@ -992,11 +999,9 @@ function renderAgentRail() {
   });
 }
 
-// Update tab status dots + agent rail + context-window chips every second.
+// Refresh agent rail + tab context-% chips + pane overlay every second.
 function statusLoopTick() {
   for (const [key, ent] of state.ptys.entries()) {
-    const tab = document.querySelector(`#pane-tabs .tab[data-pane="${CSS.escape(key)}"] .status-dot`);
-    if (tab) tab.dataset.status = deriveStatus(ent).state;
     const cwSlot = document.querySelector(`#pane-tabs .tab[data-pane="${CSS.escape(key)}"] .cw-slot`);
     if (cwSlot) cwSlot.innerHTML = contextChipHtml(ent.contextEstimate);
     const overlay = document.querySelector(`#panes .pane[data-pane="${CSS.escape(key)}"] .pane-overlay-cw`);
@@ -1778,6 +1783,10 @@ async function applyProjectAgentsToForms() {
   // labels so users can tell PLANNING from MERCHANT without memorising
   // every project's coined codes.
   const noteByCode = Object.fromEntries(agents.map((a) => [a.code, noteSummary(a.note)]));
+  // Cache for renderAgentRail (sync) so the rail can show full names without
+  // having to invoke project_agents_list on every redraw.
+  state.agentNoteByCode = noteByCode;
+  renderAgentRail();
   const nt = document.getElementById('nt-assignee');
   if (nt) {
     const current = nt.value;
@@ -1800,6 +1809,16 @@ window.__applyProjectAgents = applyProjectAgentsToForms;
 applyProjectAgentsToForms();
 
 // PH-134 Phase 2 - bridge to MC + auto-compact orchestrator.
+// Register the bare-code → ptyKey resolver so writeToAgent (used by
+// /pre-compact, /compact, heartbeat prompts) can find the right pty. Without
+// this, writes silently no-op'd because pty_write keys ptys by the full
+// `<sanitised-cwd>__<code>` form, not the bare code.
+setAgentPtyResolver((code) => {
+  const cwd = state.selectedProject;
+  if (!cwd || !code) return null;
+  const key = ptyKey(cwd, code);
+  return state.ptys.has(key) ? key : null;
+});
 void initCompactOrchestrator();
 startMcBridge({
   getRunningAgents: () => Array.from(state.ptys.keys()),

@@ -139,7 +139,32 @@ function handleAuditEvent(row) {
   }
 }
 
+// Resolver injected by main.js: turns a bare agent code (e.g. "CEO") into the
+// real pty id (e.g. "_Users_peter_Desktop_Websites_ERPrintable__CEO"). Without
+// this, writeToAgent was passing the bare code straight to pty_write, which
+// keys ptys by the full sanitised-cwd__code form — so every /pre-compact,
+// /compact, and heartbeat write missed the lookup and silently no-op'd. That
+// was why auto-compact at 50% and the heartbeat scheduler appeared dead even
+// though their schedulers were firing.
+let resolveAgentToPtyId = (code) => code;
+export function setAgentPtyResolver(fn) { resolveAgentToPtyId = typeof fn === 'function' ? fn : ((c) => c); }
+
 // Helper: write to an agent's pty. Centralised so wakeup/compact share path.
+// `data` is the prompt text. We wrap it in bracketed-paste markers and send
+// \r separately after the 150ms auto-paste threshold — claude's TUI parks
+// pasted text in its input buffer until a real Enter key arrives. Callers
+// should NOT include trailing \n / \r — this function adds the submit byte.
 export async function writeToAgent(agentCode, data) {
-  return invoke('pty_write', { args: { id: agentCode, data } });
+  const id = resolveAgentToPtyId(agentCode);
+  if (!id) {
+    console.warn(`[writeToAgent] no pty id for ${agentCode} — write dropped`);
+    return;
+  }
+  // Strip a trailing newline if the caller still passes one (legacy callers
+  // — /pre-compact\n, /compact\n, heartbeat prompts). We submit via \r below.
+  const text = String(data).replace(/[\r\n]+$/, '');
+  const payload = text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text;
+  await invoke('pty_write', { args: { id, data: payload } });
+  await new Promise((r) => setTimeout(r, 150));
+  await invoke('pty_write', { args: { id, data: '\r' } });
 }

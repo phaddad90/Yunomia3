@@ -444,6 +444,7 @@ body {
 .ar-emoji { font-size: 16px; line-height: 1; text-align: center; }
 .ar-mid { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .ar-code { font-weight: 600; font-size: 12px; }
+.ar-fullname { font-size: 11px; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
 .ar-label { font-size: 10px; color: var(--text-mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ar-human-pill { background: var(--surface-2); padding: 0 6px; border-radius: 999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-mid); }
 .ar-dot {
