@@ -1,6 +1,6 @@
 [package]
 name = "yunomia"
-version = "0.1.44"
+version = "0.1.45"
 edition = "2021"
 description = "Yunomia - Tauri shell hosting Claude Code agent fleets per project"
 authors = ["TA"]

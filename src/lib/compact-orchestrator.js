@@ -53,22 +53,33 @@ export function shutdownCompactOrchestrator() {
   state.agents.clear();
 }
 
-// Stats-aware idle auto-compact: when context >= 50% AND agent has been
-// idle (no stdout) for >= 30s, fire /pre-compact then /compact. Caller is
-// responsible for telling the orchestrator the current context % via
-// noteContextPercent.
+// Stats-aware idle auto-compact:
+//   • 50–75% AND idle: fire pre-compact summary → /compact (gives the agent
+//     a chance to file lessons and capture context first).
+//   • ≥75% AND idle: skip the summary (no headroom to write 500 words) and
+//     fire /compact directly.
+// Cooldown: 30 min between attempts per agent. Earlier (5 min) tripped a
+// nagging loop on agents whose pinned JSONL was stale post-compact — the %
+// reading stayed high, the orchestrator re-fired, the agent saw the same
+// summary prompt every 5 min and hard-refused.
 const lastIdleCheck = new Map();   // agentCode → ms timestamp
+const AUTO_COMPACT_COOLDOWN_MS = 30 * 60_000;
+const COMPACT_DIRECT_THRESHOLD = 75;
 export function noteContextPercent(agentCode, percent, isIdle) {
   if (!agentCode) return;
   if (percent < 50) return;
   if (!isIdle) return;
-  // Don't fire more than once every 5 min for the same agent.
-  const last = lastIdleCheck.get(agentCode) || 0;
-  if (Date.now() - last < 5 * 60_000) return;
   if (state.agents.get(agentCode)?.pendingPreCompact) return;
+  const last = lastIdleCheck.get(agentCode) || 0;
+  if (Date.now() - last < AUTO_COMPACT_COOLDOWN_MS) return;
   lastIdleCheck.set(agentCode, Date.now());
-  console.info(`[compact] auto-fire for ${agentCode} (context ${percent}%, idle)`);
-  void firePreCompact(agentCode);
+  if (percent >= COMPACT_DIRECT_THRESHOLD) {
+    console.info(`[compact] auto-fire /compact direct for ${agentCode} (${percent}% — past summary headroom)`);
+    void fireCompact(agentCode);
+  } else {
+    console.info(`[compact] auto-fire pre-compact for ${agentCode} (${percent}%, idle)`);
+    void firePreCompact(agentCode);
+  }
 }
 
 // Called by mc-bridge on each task-boundary event.
@@ -90,6 +101,31 @@ export async function fireCompact(agentCode) {
   // Send /compact directly (bypasses pre-compact).
   try { await writeToAgent(agentCode, '/compact\n'); }
   catch (err) { console.warn(`[compact] /compact write failed for ${agentCode}`, err); }
+  schedulePostCompactRepin(agentCode);
+}
+
+// Claude code's /compact rewrites the conversation by creating a NEW JSONL
+// with the summary as its starting point and abandoning the old. Yunomia's
+// session pin still points at the OLD file (still bloated to its pre-compact
+// size) so the % reading stays stuck high — which then re-trips the auto-fire
+// loop. After any compact, mark the in-memory pty entry as needing
+// re-discovery; refreshContextStats sees sessionPinned=false and re-runs
+// agent_session_record, which (with claim-aware discovery) picks up the new
+// post-compact JSONL on the next tick.
+function schedulePostCompactRepin(agentCode) {
+  const ptys = window.yunomia?.state?.ptys;
+  if (!ptys) return;
+  // Wait long enough for /compact to actually write a new jsonl. 8s is
+  // conservative — claude usually writes within 2-4s of receiving /compact.
+  setTimeout(() => {
+    for (const ent of ptys.values()) {
+      if (ent.code === agentCode) {
+        ent.sessionPinned = false;
+        ent.recordedSession = null;
+        console.info(`[compact] cleared pin for ${agentCode} — refreshContextStats will rediscover post-compact jsonl`);
+      }
+    }
+  }, 8000);
 }
 
 // Manual trigger from UI button (or from the hard-ceiling stats path
@@ -135,6 +171,10 @@ export async function firePreCompact(agentCode) {
     ent.pendingPreCompact = false;
     return;
   }
+  // The agent should issue /compact itself after summarising. We schedule
+  // a re-pin a bit later than the direct-/compact path because the summary
+  // takes time before /compact actually runs.
+  schedulePostCompactRepin(agentCode);
   // 5-min fallback per spec. If the agent crashed before writing the sentinel,
   // we time out and reset so manual pre-compact can be retried.
   ent.pendingTimer = setTimeout(() => {
