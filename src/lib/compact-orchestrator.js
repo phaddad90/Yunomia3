@@ -122,6 +122,12 @@ export async function firePreCompact(agentCode) {
   if (!prompt || !prompt.trim()) {
     prompt = `Summarise this session in 200–500 words: tickets touched (with verdict), open questions, files modified, lessons learnt. Then run /compact.`;
   }
+  // Strip any leading line that starts with a `/` — pre-compact.md templates
+  // begin with "/pre-compact for <code>." which claude's TUI interprets as a
+  // slash command and rejects with "Args from unknown skill". Then prepend a
+  // clean header so the prompt never starts with a `/`.
+  prompt = prompt.replace(/^\s*\/[^\n]*\n+/, '');
+  prompt = `Pre-compact summary for ${agentCode}.\n\n${prompt.trim()}`;
   try {
     await writeToAgent(agentCode, prompt);
   } catch (err) {
