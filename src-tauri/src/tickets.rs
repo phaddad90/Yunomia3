@@ -624,11 +624,35 @@ The full brief lives at `.yunomia/brief.md` in the project root.
 3. If your queue is empty, idle until something lands. Don't invent work.
 
 {authority_block}
+## Leaving comments on tickets (mandatory cadence)
+
+Comments live in `.yunomia/comments.json` (an array of comment objects). They are how agents talk to each other and to the operator about specific tickets — status updates, decisions, blockers, lesson citations, QA verdicts. **Leave a comment whenever you:**
+
+- Start work on a ticket (state what you're attempting).
+- Hit a blocker (state what you tried, what's blocking, what you'd need).
+- Finish work (state what changed, what files, what to verify).
+- Hand off to another agent (state what you did and what they should pick up).
+- For bugs: cite the lesson you consulted, before any fix code.
+
+To append a comment, use the Edit tool on `.yunomia/comments.json`. The file is a JSON array; if it doesn't exist or is empty, treat it as `[]`. Append an object with this exact shape:
+
+```json
+{{
+  \"id\": \"<uuidv4 you generate>\",
+  \"ticket_id\": \"<the ticket's uuid from tickets.json — NOT the human_id>\",
+  \"body_md\": \"<your message in markdown>\",
+  \"author_label\": \"{code}\",
+  \"created_at\": \"<ISO 8601 timestamp, e.g. 2026-05-08T14:32:11Z>\"
+}}
+```
+
+Look up the ticket's UUID by grepping `tickets.json` for the `human_id` (e.g. `ERP-001`) — the matching object's `id` field is what goes in `ticket_id`. Use the Bash tool (`uuidgen`, or `python -c 'import uuid; print(uuid.uuid4())'`) for the comment id, and `date -u +%Y-%m-%dT%H:%M:%SZ` for the timestamp.
+
 ## Bug protocol (mandatory before fix code)
 
 For any `type=bug` ticket assigned to you:
 1. Read `.yunomia/lessons.json`. Search for parallels by symptom, files, tags.
-2. Post an in_progress comment with one of these lines verbatim:
+2. Post an in_progress comment (using the schema above) with one of these lines verbatim in `body_md`:
    - `Lesson cited: BL-NNN - <how it applies>`
    - `Lessons cited: BL-NNN, BL-MMM - <how they apply>`
    - `No matching lessons in N reviewed`
@@ -655,7 +679,7 @@ fn default_kickoff(code: &str, reason: &str) -> String {
     } else {
         "Authority over your own tickets:\n- You have full read+write access to .yunomia/tickets.json. When you start work on an assigned ticket, transition assigned → in_progress via Edit. When done, in_progress → verifying. Your file edit IS the transition.\n\n"
     };
-    format!("You are {} - newly spawned by the project Lead.\n\nReason: {}\n\nFirst-wake actions:\n1. Read your soul, goals, and the project brief.\n2. Check your queue (assigned tickets in this project's kanban - `tickets.json`).\n3. If queue is empty, idle until something lands.\n\n{}Filing a Bug Lesson (after closing a `type=bug` ticket):\n- Write the lesson as JSON to `~/.yunomia/projects/<sanitised-cwd>/pending-lessons/<uuid>.json`.\n- Yunomia ingests within 10 s and removes the file.\n- Schema:\n   {{\n     \"symptom\": \"<one sentence>\",\n     \"severity\": \"low|medium|high|critical\",\n     \"ticket_id\": \"<uuid>\",\n     \"ticket_human_id\": \"<PRJ-NNN>\",\n     \"root_cause\": \"...\",\n     \"fix\": \"...\",\n     \"files_changed\": \"comma-separated paths\",\n     \"recognise_pattern\": \"how to spot this next time\",\n     \"prevent_action\": \"what to bake into testing/review to stop recurrence\",\n     \"tags\": [\"...\"],\n     \"created_by\": \"{}\"\n   }}\n\nBug protocol (also in your soul): always consult `lessons.json` BEFORE writing fix code. Cite the BL or state \"No matching lessons in N reviewed\" in your in_progress comment.\n", code, reason, authority, code)
+    format!("You are {} - newly spawned by the project Lead.\n\nReason: {}\n\nFirst-wake actions:\n1. Read your soul, goals, and the project brief.\n2. Check your queue (assigned tickets in this project's kanban - `tickets.json`).\n3. If queue is empty, idle until something lands.\n\n{}Leaving comments on tickets (mandatory cadence):\n- Comment whenever you start a ticket, hit a blocker, finish work, hand off, or cite a lesson.\n- Comments live in `.yunomia/comments.json` (an array). Use the Edit tool to append.\n- Schema for each comment:\n   {{\n     \"id\": \"<uuidv4>\",\n     \"ticket_id\": \"<ticket UUID from tickets.json — NOT the human_id>\",\n     \"body_md\": \"<your message>\",\n     \"author_label\": \"{}\",\n     \"created_at\": \"<ISO 8601, e.g. 2026-05-08T14:32:11Z>\"\n   }}\n- Look up the ticket UUID by grepping tickets.json for the human_id (e.g. ERP-001). Use `uuidgen` (Bash) for the comment id and `date -u +%Y-%m-%dT%H:%M:%SZ` for the timestamp.\n\nFiling a Bug Lesson (after closing a `type=bug` ticket):\n- Write the lesson as JSON to `~/.yunomia/projects/<sanitised-cwd>/pending-lessons/<uuid>.json`.\n- Yunomia ingests within 10 s and removes the file.\n- Schema:\n   {{\n     \"symptom\": \"<one sentence>\",\n     \"severity\": \"low|medium|high|critical\",\n     \"ticket_id\": \"<uuid>\",\n     \"ticket_human_id\": \"<PRJ-NNN>\",\n     \"root_cause\": \"...\",\n     \"fix\": \"...\",\n     \"files_changed\": \"comma-separated paths\",\n     \"recognise_pattern\": \"how to spot this next time\",\n     \"prevent_action\": \"what to bake into testing/review to stop recurrence\",\n     \"tags\": [\"...\"],\n     \"created_by\": \"{}\"\n   }}\n\nBug protocol (also in your soul): always consult `lessons.json` BEFORE writing fix code. Cite the BL or state \"No matching lessons in N reviewed\" in your in_progress comment.\n", code, reason, authority, code, code)
 }
 fn default_pre_compact(code: &str) -> String {
     format!("/pre-compact for {}.\n\nSummarise (200–500 words):\n- Tickets touched this session (human ids + verdict).\n- Open questions you didn't get to.\n- Files modified.\n- Lessons learnt (file them via the pending-lessons sentinel BEFORE /compact - see your kickoff).\n- State you'll need to resume cleanly post-compact.\n\nThen trigger /compact.\n", code)

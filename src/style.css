@@ -158,6 +158,13 @@ body {
 }
 .composer-send:hover { filter: brightness(1.05); }
 .composer-send:active { transform: translateY(1px); }
+.composer-dismiss {
+  height: 36px; min-width: 36px; padding: 0 10px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-mid);
+  border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;
+}
+.composer-dismiss:hover { background: var(--surface); color: var(--text-hi); }
+.composer-dismiss:active { transform: translateY(1px); }
 
 /* File tree (Files subtab) */
 .files-header {

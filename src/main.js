@@ -11,7 +11,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { initCompactOrchestrator, noteTaskBoundary, firePreCompact, fireCompact, noteContextPercent } from './lib/compact-orchestrator.js';
 import { startHeartbeat, noteWakeupSent, noteStdoutFromAgent } from './lib/heartbeat.js';
-import { initKanban, setKanbanProject } from './lib/kanban.js';
+import { initKanban, setKanbanProject, startKanbanPoll, reconcileInFlightAssignments } from './lib/kanban.js';
 import { loadOnboardingForProject, renderOnboardingView, reopenOnboarding } from './lib/onboarding.js';
 import { refresh as refreshKanban, getTicketStats, setFilter as setKanbanFilter } from './lib/kanban.js';
 import { renderLessonsView, bindLessonModal } from './lib/lessons.js';
@@ -382,6 +382,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   composer.className = 'composer';
   composer.innerHTML = `
     <textarea class="composer-input" rows="1" placeholder="Message ${escapeHtml(code)}…  (Enter send · Shift+Enter newline · paste / drop images · Esc cancels claude · ↑↓ arrows pass through)"></textarea>
+    <button class="composer-dismiss" type="button" title="Dismiss claude menu prompt (sends '0' raw)">0</button>
     <button class="composer-send" type="button" title="Send (Enter)">↵</button>
   `;
   pane.appendChild(composer);
@@ -389,6 +390,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
 
   const composerInput = composer.querySelector('.composer-input');
   const composerSend = composer.querySelector('.composer-send');
+  const composerDismiss = composer.querySelector('.composer-dismiss');
   const autoGrow = () => {
     composerInput.style.height = 'auto';
     composerInput.style.height = Math.min(composerInput.scrollHeight, 180) + 'px';
@@ -455,6 +457,13 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     }
   });
   composerSend.addEventListener('click', submitComposer);
+  // Dismiss button: send a single raw "0" byte — bypasses bracketed paste so
+  // claude's TUI menus (e.g. the post-session rating prompt) treat it as a
+  // keypress instead of buffered text. Solves "I can't dismiss the rating
+  // overlay because typing into the composer doesn't reach the menu."
+  composerDismiss.addEventListener('click', () => {
+    invoke('pty_write', { args: { id: key, data: '0' } }).catch(() => {});
+  });
 
   // Image paste: capture clipboard image data, write to disk via Tauri,
   // insert the absolute path into the composer at the caret. When the user
@@ -673,8 +682,12 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   // delay so claude has finished its TUI splash before we shove the prompt in.
   // Determine kickoff content: explicit opts.kickoff (Lead bootstrap) wins,
   // else read the per-agent kickoff.md from the project. If empty, no paste.
-  let kickoffContent = opts.kickoff || '';
-  if (!kickoffContent && code !== 'LEAD') {
+  //
+  // When resuming an existing session (--resume flag), claude-code already
+  // remembers the kickoff from the prior turn - re-pasting it wastes tokens
+  // and confuses the agent into thinking it's a fresh boot.
+  let kickoffContent = opts.resume ? '' : (opts.kickoff || '');
+  if (!kickoffContent && !opts.resume && code !== 'LEAD') {
     try {
       kickoffContent = await invoke('agent_file_get', { args: { cwd, code, kind: 'kickoff' } }) || '';
     } catch { /* ignore */ }
@@ -784,30 +797,88 @@ function registerPathLinkProviders(term, cwd) {
 function buildWakeupPrompt({ ticketHumanId, reason, isBug }) {
   const ref = ticketHumanId ? ` (${ticketHumanId})` : '';
   const base = `\n\n[Yunomia wakeup - ${reason}${ref}] Check your queue.`;
-  if (!isBug) return base + '\n';
+  // Comment cadence reminder — appended on every wake so older agents (whose
+  // kickoff.md predates the comment-instructions section) still get it.
+  // Comments live in .yunomia/comments.json; agents must append on
+  // start/blocker/handoff/done. See your kickoff for the full schema.
+  const commentReminder = `\nReminder: leave a one-line comment in .yunomia/comments.json whenever you start, blocker, hand off, or finish a ticket. Schema is in your kickoff.md. ticket_id is the UUID from tickets.json, not the human_id.`;
+  if (!isBug) return base + commentReminder + '\n';
   // Bug-specific enrichment - soul-level directive, restated at wake time.
-  return base + `\n\nBUG PROTOCOL - MANDATORY before fix code:\n  1. Open lessons.json for this project. Search for parallels by symptom, files, tags.\n  2. Post an in_progress comment that includes ONE of:\n       Lesson cited: BL-NNN - <how it applies>\n       No matching lessons in N reviewed\n  3. /handoff and /done are blocked by Yunomia's compliance engine until that line exists.\n  4. After fix, write a NEW Bug Lesson via the pending-lessons sentinel (see your kickoff).\n`;
+  return base + commentReminder + `\n\nBUG PROTOCOL - MANDATORY before fix code:\n  1. Open lessons.json for this project. Search for parallels by symptom, files, tags.\n  2. Post an in_progress comment that includes ONE of:\n       Lesson cited: BL-NNN - <how it applies>\n       No matching lessons in N reviewed\n  3. /handoff and /done are blocked by Yunomia's compliance engine until that line exists.\n  4. After fix, write a NEW Bug Lesson via the pending-lessons sentinel (see your kickoff).\n`;
 }
 
 async function onWakeup(payload) {
   const { agentCode, ticketHumanId, reason } = payload;
-  const key = ptyKey(state.selectedProject, agentCode);
-  if (!state.ptys.has(key)) return;
+  const cwd = state.selectedProject;
+  if (!cwd) {
+    console.warn(`[wakeup] no selected project - dropping ${agentCode}/${reason}`);
+    return;
+  }
+  const key = ptyKey(cwd, agentCode);
+  console.info(`[wakeup] received ${agentCode} reason=${reason} ticket=${ticketHumanId || '-'} ptyAlive=${state.ptys.has(key)}`);
+  // Auto-spawn `on-assignment` agents when work first lands. Without this,
+  // CEO's promotion of ERP-001 to INT silently no-op'd because INT wasn't
+  // running yet and onWakeup just bailed - the orchestration chain dies
+  // at the first hop. Pull the agent's model from project_agents_list so
+  // we honour the brief's choice instead of hardcoding sonnet.
+  let justSpawned = false;
+  if (!state.ptys.has(key)) {
+    try {
+      const agents = await invoke('project_agents_list', { args: { cwd } }) || [];
+      const cfg = agents.find((a) => a.code === agentCode);
+      if (!cfg) {
+        console.warn(`[wakeup] no project_agents entry for ${agentCode} - cannot auto-spawn`);
+        return;
+      }
+      let resumeId = null;
+      try { resumeId = await invoke('agent_session_get', { args: { cwd, agentCode } }); } catch { /* no prior session */ }
+      console.info(`[wakeup] auto-spawning ${agentCode} (${cfg.model || 'sonnet'}) for ${ticketHumanId}${resumeId ? ` (resume ${resumeId.slice(0,8)})` : ''}`);
+      await spawnAgent(agentCode, cfg.model || 'claude-sonnet-4-6', cwd, resumeId ? { resume: resumeId } : {});
+      justSpawned = true;
+      // spawnAgent fires the kickoff after a 2.5s pause; let that land
+      // before we layer the wakeup prompt on top, otherwise the wakeup
+      // gets concatenated into the kickoff paste buffer and submitted
+      // as one mega-message.
+      await new Promise((r) => setTimeout(r, 5000));
+    } catch (e) {
+      console.warn(`[wakeup] auto-spawn failed for ${agentCode}`, e);
+      return;
+    }
+  }
   // Look up ticket type to enrich prompt for bugs.
   let isBug = false;
   if (ticketHumanId) {
     try {
-      const tickets = await invoke('tickets_list', { args: { cwd: state.selectedProject } }) || [];
+      const tickets = await invoke('tickets_list', { args: { cwd } }) || [];
       const t = tickets.find((x) => x.human_id === ticketHumanId);
       if (t && t.type === 'bug') isBug = true;
     } catch { /* ignore */ }
   }
   try {
-    await invoke('pty_write', { args: { id: key, data: buildWakeupPrompt({ ...payload, isBug }) } });
+    // For an already-running agent, claude may be parked on a TUI menu (post-
+    // session rating prompt, /resume picker, etc.). Anything we paste while a
+    // menu is active gets eaten as menu input, so the wakeup prompt vanishes
+    // and the agent stays asleep. Send a single ESC first to dismiss any
+    // open menu — harmless when there's no menu (claude treats stray ESC as
+    // a no-op at the prompt). Skip on freshly spawned agents because their
+    // kickoff is still streaming and ESC could cancel the read.
+    if (!justSpawned) {
+      try { await invoke('pty_write', { args: { id: key, data: '\x1b' } }); } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    // Wrap in bracketed-paste markers so claude treats embedded \n as
+    // newlines-within-input rather than line-by-line submits, then send \r
+    // separately after the auto-paste threshold so the TUI sees a real Enter.
+    // Without the trailing \r the prompt sat in the input buffer indefinitely
+    // — that was the wake-on-assignment "isn't working" symptom.
+    const wakeText = buildWakeupPrompt({ ...payload, isBug });
+    await invoke('pty_write', { args: { id: key, data: `\x1b[200~${wakeText}\x1b[201~` } });
+    await new Promise((r) => setTimeout(r, 150));
+    await invoke('pty_write', { args: { id: key, data: '\r' } });
     noteWakeupSent(agentCode, ticketHumanId, reason);
     const ent = state.ptys.get(key);
     if (ent) ent.lastWriteAt = Date.now();
-    console.info(`[wakeup] ${key} ← ${reason}${isBug ? ' (BUG)' : ''}`);
+    console.info(`[wakeup] ${key} ← ${reason}${isBug ? ' (BUG)' : ''}${justSpawned ? ' (after spawn)' : ''}`);
   } catch (err) {
     console.warn(`[wakeup] write failed for ${key}`, err);
   }
@@ -1129,6 +1200,43 @@ async function renderProjectView() {
       cwd,
       onWakeup: (payload) => onWakeup(payload),
     });
+    startKanbanPoll();
+    // Sweep for in-flight assignments after the first tickets_list completes
+    // (initKanban kicks off an async refresh). 800ms is enough for the first
+    // refresh to land in dev; on slow disks the poller picks them up next tick.
+    setTimeout(() => {
+      try {
+        reconcileInFlightAssignments({
+          getRunningAgentCodes: () => Array.from(state.ptys.values())
+            .filter((e) => e.cwd === cwd && !e.exited)
+            .map((e) => e.code),
+        });
+      } catch (err) { console.warn('boot reconcile failed', err); }
+    }, 800);
+    // Auto-resume heartbeat agents (LEAD, CEO, anything declared as
+    // wakeup_mode=heartbeat) when the project loads. These are the
+    // orchestrators that need to be alive to drive the project; without
+    // this the operator had to click + Spawn agent on every app restart.
+    //
+    // Pass --resume <session_id> when we have one pinned for the agent so
+    // claude-code re-loads the prior session instead of fresh-reading
+    // kickoff/soul/brief/tickets every restart - that re-read costs ~10k
+    // tokens per agent.
+    void (async () => {
+      try {
+        const projectAgents = await invoke('project_agents_list', { args: { cwd } }) || [];
+        for (const a of projectAgents) {
+          if (a.wakeup_mode !== 'heartbeat') continue;
+          const k = ptyKey(cwd, a.code);
+          if (state.ptys.has(k)) continue;
+          let resumeId = null;
+          try { resumeId = await invoke('agent_session_get', { args: { cwd, agentCode: a.code } }); } catch { /* no record yet */ }
+          console.info(`[boot] auto-resuming heartbeat agent ${a.code}${resumeId ? ` (resume ${resumeId.slice(0,8)})` : ' (fresh - no session pinned)'}`);
+          try { await spawnAgent(a.code, a.model || 'claude-sonnet-4-6', cwd, resumeId ? { resume: resumeId } : {}); }
+          catch (e) { console.warn(`[boot] auto-resume failed for ${a.code}`, e); }
+        }
+      } catch (e) { console.warn('[boot] heartbeat resume sweep failed', e); }
+    })();
     // Render brief preview panel above kanban (collapsed by default).
     document.getElementById('brief-name').textContent = projState.project_name || projectLabel(cwd);
     document.getElementById('brief-content').textContent = brief || '(empty - Lead never wrote a brief?)';
@@ -1495,10 +1603,25 @@ setInterval(killSwitchTick, 30_000);
 setTimeout(killSwitchTick, 2000);
 
 // Keyboard shortcuts - match IDE muscle memory.
-//   Cmd+T  = open spawn-agent modal (when active phase)
-//   Cmd+W  = close current tab (if not Dashboard)
-//   Cmd+1..9 = switch to nth tab
+//   Cmd+T          = open spawn-agent modal (when active phase)
+//   Cmd+W          = close current tab (if not Dashboard)
+//   Cmd+1..9       = switch to nth tab
+//   Ctrl+Tab       = next agent pane
+//   Ctrl+Shift+Tab = previous agent pane
 window.addEventListener('keydown', (e) => {
+  // Ctrl+Tab cycles panes — handled before the meta-only short-circuit because
+  // Ctrl+Tab on macOS doesn't fire metaKey, only ctrlKey, and we want it to
+  // work on every platform regardless of which modifier maps to "meta".
+  if (e.ctrlKey && e.key === 'Tab') {
+    const tabs = $$('#pane-tabs .tab').filter((t) => t.style.display !== 'none');
+    if (!tabs.length) return;
+    const currentIdx = tabs.findIndex((t) => t.dataset.pane === state.activePane);
+    const dir = e.shiftKey ? -1 : 1;
+    const nextIdx = ((currentIdx === -1 ? 0 : currentIdx) + dir + tabs.length) % tabs.length;
+    e.preventDefault();
+    tabs[nextIdx].click();
+    return;
+  }
   const meta = e.metaKey || e.ctrlKey;
   if (!meta) return;
   // Cmd+T → spawn

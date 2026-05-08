@@ -61,6 +61,7 @@ export async function refresh() {
     renderEmpty('Pick a project (top bar) to see its kanban.');
     return;
   }
+  const previous = new Map((k.tickets || []).map((t) => [t.id, { status: t.status, assignee_agent: t.assignee_agent }]));
   try {
     k.tickets = await invoke('tickets_list', { args: { cwd: k.cwd } });
   } catch (err) {
@@ -72,7 +73,74 @@ export async function refresh() {
     k.schedules = {};
     for (const s of schedList) k.schedules[s.ticket_id] = s;
   } catch { k.schedules = {}; }
+  // Detect transitions caused by direct file edits (e.g. CEO using the Edit
+  // tool on tickets.json instead of going through tickets_patch). Fire the
+  // same wakeup callback the API path uses so on-assignment workers get
+  // auto-spawned and prompted. Without this, an orchestrator's file edit
+  // is invisible to Yunomia and the assignment chain dies on the first hop.
+  //
+  // Also wake the orchestrator (CEO) when a ticket completes - that's how
+  // it learns "ERP-001 is done, time to promote the next wave" without
+  // sitting idle until the heartbeat hour rolls around.
+  if (k.onWakeup && previous.size) {
+    let workCompleted = false;
+    for (const t of k.tickets) {
+      const prev = previous.get(t.id);
+      if (!prev) continue;
+      const becameAssigned = prev.status !== 'assigned' && t.status === 'assigned';
+      const becameInProgress = prev.status !== 'in_progress' && t.status === 'in_progress';
+      const becameVerifying = prev.status !== 'verifying' && t.status === 'verifying';
+      const becameDone = prev.status !== 'done' && t.status === 'done';
+      if ((becameAssigned || becameInProgress) && t.assignee_agent) {
+        try {
+          k.onWakeup({ agentCode: t.assignee_agent, ticketHumanId: t.human_id, reason: 'file-edit' });
+        } catch (err) { console.warn('onWakeup file-edit failed', err); }
+      }
+      if (becameVerifying || becameDone) workCompleted = true;
+    }
+    if (workCompleted) {
+      // Wake CEO so it can re-orchestrate. Skip if CEO is the one who
+      // wrote the change (it's about to read its own response anyway).
+      try {
+        k.onWakeup({ agentCode: 'CEO', ticketHumanId: null, reason: 'work-completed' });
+      } catch (err) { console.warn('CEO completion wakeup failed', err); }
+    }
+  }
   render();
+}
+
+// Poll tickets.json so direct file edits (orchestrator using Edit tool)
+// get picked up. 3s tick is fast enough that handoffs feel snappy without
+// hammering the disk.
+let pollHandle = null;
+export function startKanbanPoll() {
+  if (pollHandle) return;
+  pollHandle = setInterval(() => { void refresh(); }, 3000);
+}
+
+// On project boot, fire wakeup for every ticket already in assigned or
+// in_progress state with a registered assignee. Without this, agents that
+// were promoted in a previous session never auto-spawn after the app
+// restarts - the transition-detection poller only catches *new* status
+// changes, not the existing in-flight ones.
+//
+// Caller should pass `getRunningAgents()` so we don't re-prompt agents
+// that are already up and idle.
+export function reconcileInFlightAssignments({ getRunningAgentCodes }) {
+  if (!k.onWakeup || !k.tickets) return;
+  const running = new Set(getRunningAgentCodes ? getRunningAgentCodes() : []);
+  const seen = new Set();
+  for (const t of k.tickets) {
+    if (!t.assignee_agent) continue;
+    if (t.status !== 'assigned' && t.status !== 'in_progress') continue;
+    // De-dup so an agent with 5 in-flight tickets only gets spawned once.
+    if (seen.has(t.assignee_agent)) continue;
+    seen.add(t.assignee_agent);
+    if (running.has(t.assignee_agent)) continue;
+    try {
+      k.onWakeup({ agentCode: t.assignee_agent, ticketHumanId: t.human_id, reason: 'boot-reconcile' });
+    } catch (err) { console.warn('reconcileInFlightAssignments fail', err); }
+  }
 }
 
 export function setFilter(key, val) {

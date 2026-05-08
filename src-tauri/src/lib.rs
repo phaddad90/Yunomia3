@@ -77,6 +77,7 @@ pub fn run() {
             tickets::taxonomy_get,
             tickets::taxonomy_set,
             store::agent_session_record,
+            store::agent_session_get,
             files::list_dir,
             files::open_path,
             files::reveal_path,
