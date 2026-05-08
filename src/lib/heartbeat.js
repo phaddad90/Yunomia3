@@ -82,6 +82,17 @@ async function layer1Tick({ getRunningAgents }) {
   if (!heartbeatAgents.length) return;
   const running = new Set(getRunningAgents());
   const now = Date.now();
+  // Pull tickets.json once per tick so we can build an actionable summary
+  // for orchestrator agents. Without this the heartbeat prompt was too
+  // passive ("anything you should be doing?") and orchestrators would
+  // describe what they were *waiting on* instead of taking the obvious
+  // next move (transition triage, reassign orphans, etc.).
+  let tickets = [];
+  try { tickets = await invoke('tickets_list', { args: { cwd } }) || []; } catch { /* keep empty */ }
+  const triage = tickets.filter((t) => t.status === 'triage');
+  const inProgress = tickets.filter((t) => t.status === 'in_progress');
+  const orphanInProgress = inProgress.filter((t) => t.assignee_agent && !running.has(t.assignee_agent));
+  const isOrchestrator = (code) => code === 'CEO' || code === 'LEAD';
   for (const a of heartbeatAgents) {
     if (!running.has(a.code)) continue;
     const key = `${cwd}|${a.code}`;
@@ -89,8 +100,19 @@ async function layer1Tick({ getRunningAgents }) {
     const intervalMs = Math.max(5, a.heartbeat_min || 60) * 60_000;
     if (now - last < intervalMs) continue;
     lastFiredAt.set(key, now);
-    const prompt = `\n\n[Yunomia heartbeat - ${a.code} - ${new Date().toISOString()}] Periodic check. Anything you should be doing? If queue empty, reply OK and go back to sleep.\n`;
-    try { await writeToAgent(a.code, prompt); console.info(`[heartbeat] ${a.code} fired`); }
+    let prompt;
+    if (isOrchestrator(a.code)) {
+      const triageList = triage.length
+        ? triage.slice(0, 8).map((t) => `${t.human_id} (${t.assignee_agent || 'unassigned'}): ${t.title}`).join('; ')
+        : '(none)';
+      const orphanList = orphanInProgress.length
+        ? orphanInProgress.slice(0, 8).map((t) => `${t.human_id} → ${t.assignee_agent} not running`).join('; ')
+        : '(none)';
+      prompt = `\n\n[Yunomia heartbeat - ${a.code} - ${new Date().toISOString()}] Orchestrator check. You are not idle if anything below is actionable — take the action, do NOT just describe state.\n\nTriage tickets needing routing/assignment: ${triageList}\nIn_progress tickets whose assignee is not running (orphaned): ${orphanList}\n\nIf both lists are (none) and your assigned/in_progress queue is empty, reply "OK" and sleep. Otherwise: edit tickets.json to assign/transition the triage items to the right worker, and either reassign or fire on-demand wakes for the orphaned in_progress tickets. Don't ask permission — your file edits ARE the orchestration. Canonical statuses: triage, assigned, in_progress, in_review, done, released.\n`;
+    } else {
+      prompt = `\n\n[Yunomia heartbeat - ${a.code} - ${new Date().toISOString()}] Periodic check. If you have an in_progress ticket assigned to you, resume it. If your queue is empty, reply "OK" and sleep. Don't reply with status descriptions — take action or sleep.\n`;
+    }
+    try { await writeToAgent(a.code, prompt); console.info(`[heartbeat] ${a.code} fired (${isOrchestrator(a.code) ? `triage=${triage.length} orphan=${orphanInProgress.length}` : 'worker'})`); }
     catch (err) { console.warn(`[heartbeat] write failed for ${a.code}`, err); }
   }
 }
