@@ -86,14 +86,24 @@ export async function refresh() {
     let workCompleted = false;
     for (const t of k.tickets) {
       const prev = previous.get(t.id);
-      if (!prev) continue;
-      const becameAssigned = prev.status !== 'assigned' && t.status === 'assigned';
-      const becameInProgress = prev.status !== 'in_progress' && t.status === 'in_progress';
-      const becameVerifying = prev.status !== 'verifying' && t.status === 'verifying';
-      const becameDone = prev.status !== 'done' && t.status === 'done';
+      // A ticket appearing for the first time AFTER the kanban has booted
+      // (previous.size > 0 gate above) is a new orchestrator-created ticket
+      // — CEO/LEAD direct-wrote it to tickets.json. If it landed already
+      // assigned or in_progress, fire wake for the assignee. Without this,
+      // CEO's "create ticket already routed" pattern was a silent black
+      // hole: assignee was never woken, ticket sat orphaned for hours.
+      const isNewTicket = !prev;
+      const becameAssigned = isNewTicket
+        ? t.status === 'assigned'
+        : (prev.status !== 'assigned' && t.status === 'assigned');
+      const becameInProgress = isNewTicket
+        ? t.status === 'in_progress'
+        : (prev.status !== 'in_progress' && t.status === 'in_progress');
+      const becameVerifying = !isNewTicket && prev.status !== 'verifying' && t.status === 'verifying';
+      const becameDone = !isNewTicket && prev.status !== 'done' && t.status === 'done';
       if ((becameAssigned || becameInProgress) && t.assignee_agent) {
         try {
-          k.onWakeup({ agentCode: t.assignee_agent, ticketHumanId: t.human_id, reason: 'file-edit' });
+          k.onWakeup({ agentCode: t.assignee_agent, ticketHumanId: t.human_id, reason: isNewTicket ? 'file-create' : 'file-edit' });
         } catch (err) { console.warn('onWakeup file-edit failed', err); }
       }
       if (becameVerifying || becameDone) workCompleted = true;
