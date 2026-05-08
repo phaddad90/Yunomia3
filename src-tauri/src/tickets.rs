@@ -626,7 +626,7 @@ The full brief lives at `.yunomia/brief.md` in the project root.
 {authority_block}
 ## Canonical ticket fields (use these EXACT values, no inventing)
 
-When you read or write `.yunomia/tickets.json`, every ticket must use the canonical vocabulary or it will be silently dropped from the kanban (it lands in an "Other / needs status fix" column with a warning pill instead of a real one).
+When you read or write `.yunomia/tickets.json`, every ticket must use the canonical vocabulary or it will be silently dropped from the kanban (it lands in an `Other / needs status fix` column with a warning pill instead of a real one).
 
 - `status`: one of `triage`, `assigned`, `in_progress`, `in_review`, `done`, `released`. New tickets default to `triage`. Do NOT use `open`, `closed`, `pending`, `wip`, etc.
 - `type`: free-text but the UI styles known values — `bug`, `feature`, `doc`, `task`, `chore`. Use these where they fit.
