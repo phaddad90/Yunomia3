@@ -398,6 +398,14 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   const submitComposer = async () => {
     const text = composerInput.value;
     if (!text) return;
+    // Prepend an ISO-8601 UTC timestamp so the agent's conversation log
+    // captures *when* every user message arrived. Same `[Yunomia <thing> -
+    // <iso>]` shape as wake / heartbeat so agents recognise the bracket
+    // prefix as Yunomia metadata they can parse if they need to reason
+    // about timing (e.g. "the user asked X at 13:45 UTC, then waited 20m
+    // before sending Y, so Y is probably a follow-up").
+    const ts = new Date().toISOString();
+    const stamped = `[Yunomia user - ${ts}] ${text}`;
     // claude code's TUI auto-detects pasted input when bytes arrive in one
     // chunk: it strips the trailing CR from "<text>\r" and parks the text in
     // the input buffer waiting for a real Enter. That's why composer sends
@@ -407,8 +415,8 @@ async function spawnAgent(code, model, cwd, opts = {}) {
     // send CR alone so the TUI sees it as a real keypress.
     // Multi-line messages still need bracketed paste so embedded newlines
     // become newlines-within-input rather than line-by-line submits.
-    const payload = text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text;
-    console.info('[composer]', code, 'submit', text.length, 'chars:', text.slice(0, 80) + (text.length > 80 ? '…' : ''));
+    const payload = stamped.includes('\n') ? `\x1b[200~${stamped}\x1b[201~` : stamped;
+    console.info('[composer]', code, 'submit', text.length, 'chars at', ts, ':', text.slice(0, 80) + (text.length > 80 ? '…' : ''));
     composerInput.value = '';
     autoGrow();
     // Snap viewport to the bottom on send so the user immediately sees
@@ -796,7 +804,8 @@ function registerPathLinkProviders(term, cwd) {
 // (deferred - not strictly needed for Phase 2 smoke).
 function buildWakeupPrompt({ ticketHumanId, reason, isBug }) {
   const ref = ticketHumanId ? ` (${ticketHumanId})` : '';
-  const base = `\n\n[Yunomia wakeup - ${reason}${ref}] Check your queue.`;
+  const ts = new Date().toISOString();
+  const base = `\n\n[Yunomia wakeup - ${reason}${ref} - ${ts}] Check your queue.`;
   // Comment cadence + canonical-status reminder — appended on every wake so
   // older agents (whose kickoff.md predates these sections) still get the
   // rules. Comments live in .yunomia/comments.json; agents must append on
