@@ -797,11 +797,11 @@ function registerPathLinkProviders(term, cwd) {
 function buildWakeupPrompt({ ticketHumanId, reason, isBug }) {
   const ref = ticketHumanId ? ` (${ticketHumanId})` : '';
   const base = `\n\n[Yunomia wakeup - ${reason}${ref}] Check your queue.`;
-  // Comment cadence reminder — appended on every wake so older agents (whose
-  // kickoff.md predates the comment-instructions section) still get it.
-  // Comments live in .yunomia/comments.json; agents must append on
-  // start/blocker/handoff/done. See your kickoff for the full schema.
-  const commentReminder = `\nReminder: leave a one-line comment in .yunomia/comments.json whenever you start, blocker, hand off, or finish a ticket. Schema is in your kickoff.md. ticket_id is the UUID from tickets.json, not the human_id.`;
+  // Comment cadence + canonical-status reminder — appended on every wake so
+  // older agents (whose kickoff.md predates these sections) still get the
+  // rules. Comments live in .yunomia/comments.json; agents must append on
+  // start/blocker/handoff/done.
+  const commentReminder = `\nReminder: leave a one-line comment in .yunomia/comments.json whenever you start, blocker, hand off, or finish a ticket. Schema is in your kickoff.md. ticket_id is the UUID from tickets.json, not the human_id.\nReminder: ticket status must be one of: triage, assigned, in_progress, in_review, done, released. Do not invent statuses like "open" or "closed" — they get silently dropped from the kanban.`;
   if (!isBug) return base + commentReminder + '\n';
   // Bug-specific enrichment - soul-level directive, restated at wake time.
   return base + commentReminder + `\n\nBUG PROTOCOL - MANDATORY before fix code:\n  1. Open lessons.json for this project. Search for parallels by symptom, files, tags.\n  2. Post an in_progress comment that includes ONE of:\n       Lesson cited: BL-NNN - <how it applies>\n       No matching lessons in N reviewed\n  3. /handoff and /done are blocked by Yunomia's compliance engine until that line exists.\n  4. After fix, write a NEW Bug Lesson via the pending-lessons sentinel (see your kickoff).\n`;

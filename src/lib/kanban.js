@@ -199,6 +199,13 @@ function render() {
     return;
   }
   const filtered = k.tickets.filter(ticketMatchesFilters);
+  const validStatuses = new Set(COLUMNS.map((c) => c.id));
+  // Tickets whose status doesn't match any canonical column. Without this,
+  // agents that direct-edit tickets.json with an invented status (e.g.
+  // "open" from generic-issue-tracker muscle memory) saw their tickets
+  // vanish from the UI. Now they land in the "Other" column at the end
+  // with the bogus status visible on the card so the operator can fix it.
+  const orphans = filtered.filter((t) => !validStatuses.has(t.status));
   const cols = COLUMNS.map((c) => {
     const cards = filtered.filter((t) => t.status === c.id);
     return `
@@ -208,7 +215,13 @@ function render() {
       </div>
     `;
   }).join('');
-  root.innerHTML = `<div class="kanban">${cols}</div>`;
+  const orphanCol = orphans.length
+    ? `<div class="k-col k-col-orphan" data-col="__orphan" title="These tickets have a status outside Yunomia's canonical set. Click a card and pick a real status to move it back into the flow.">
+         <div class="k-col-head"><span>Other / needs status fix</span><span class="k-count">${orphans.length}</span></div>
+         <div class="k-col-body">${orphans.map(renderCard).join('')}</div>
+       </div>`
+    : '';
+  root.innerHTML = `<div class="kanban">${cols}${orphanCol}</div>`;
   $$('#kanban-root .k-card').forEach((el) => el.addEventListener('click', () => openTicket(el.dataset.id)));
 }
 
@@ -222,6 +235,12 @@ function renderCard(t) {
   const ag = t.assignee_agent ? `${AGENT_EMOJI[t.assignee_agent] || ''} ${escapeHtml(t.assignee_agent)}` : '<span class="k-unassigned">unassigned</span>';
   const sched = k.schedules?.[t.id];
   const schedBadge = sched ? scheduleBadgeHtml(sched) : '';
+  // Surface non-canonical status on the card so the operator can spot
+  // tickets that landed in the orphan column. Empty when status is valid.
+  const validStatuses = new Set(COLUMNS.map((c) => c.id));
+  const badStatus = !validStatuses.has(t.status)
+    ? `<span class="k-pill k-pill-bad-status" title="Status '${escapeHtml(t.status)}' is not a canonical Yunomia status. Open the ticket and pick a real one.">⚠ ${escapeHtml(t.status)}</span>`
+    : '';
   return `
     <div class="k-card" data-id="${escapeHtml(t.id)}">
       <div class="k-card-head">
@@ -230,6 +249,7 @@ function renderCard(t) {
       </div>
       <div class="k-card-title">${escapeHtml(t.title)}</div>
       <div class="k-card-foot">
+        ${badStatus}
         <span class="k-pill k-pill-${t.audience}">${escapeHtml(t.audience)}</span>
         <span class="k-pill k-pill-${t.type}">${escapeHtml(t.type)}</span>
         ${schedBadge}

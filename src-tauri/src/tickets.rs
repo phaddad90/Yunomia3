@@ -624,6 +624,17 @@ The full brief lives at `.yunomia/brief.md` in the project root.
 3. If your queue is empty, idle until something lands. Don't invent work.
 
 {authority_block}
+## Canonical ticket fields (use these EXACT values, no inventing)
+
+When you read or write `.yunomia/tickets.json`, every ticket must use the canonical vocabulary or it will be silently dropped from the kanban (it lands in an "Other / needs status fix" column with a warning pill instead of a real one).
+
+- `status`: one of `triage`, `assigned`, `in_progress`, `in_review`, `done`, `released`. New tickets default to `triage`. Do NOT use `open`, `closed`, `pending`, `wip`, etc.
+- `type`: free-text but the UI styles known values — `bug`, `feature`, `doc`, `task`, `chore`. Use these where they fit.
+- `audience`: free-text but the UI styles `admin`, `production`, `staging`, `customer`, `internal`. Use one of these.
+- `assignee_agent`: must be a code that exists in `.yunomia/agents.json` (e.g. CEO, SA, FE, INT, QA — your project's roster).
+
+If you're unsure, read an existing ticket and copy its field values literally.
+
 ## Leaving comments on tickets (mandatory cadence)
 
 Comments live in `.yunomia/comments.json` (an array of comment objects). They are how agents talk to each other and to the operator about specific tickets — status updates, decisions, blockers, lesson citations, QA verdicts. **Leave a comment whenever you:**

@@ -734,6 +734,9 @@ body {
   background: var(--surface-2); color: var(--text-mid);
   text-transform: uppercase; letter-spacing: 0.04em;
 }
+.k-pill-bad-status { background: #fef3c7; color: #b45309; border: 1px solid #f59e0b; }
+.k-col-orphan .k-col-head { color: #b45309; }
+.k-col-orphan { border-left: 2px solid #f59e0b; }
 .k-pill-bug      { background: #fee2e2; color: #b91c1c; }
 .k-pill-feature  { background: #dbeafe; color: #1d4ed8; }
 .k-pill-doc      { background: #f3e8ff; color: #7e22ce; }
