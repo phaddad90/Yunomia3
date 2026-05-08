@@ -297,7 +297,7 @@ async function refreshContextStats() {
           if (sid) { ent.sessionPinned = true; ent.recordedSession = sid; }
         } catch { /* claude-code project dir may not exist yet on first tick */ }
       }
-      const est = await invoke('agent_context_estimate', { args: { cwd: ent.cwd, agentCode: ent.code } });
+      const est = await invoke('agent_context_estimate', { args: { cwd: ent.cwd, agentCode: ent.code, model: ent.model || null } });
       ent.contextEstimate = est || null;
       // Auto-compact at 50% when idle.
       if (est && ent.cwd === state.selectedProject) {

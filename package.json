@@ -1,6 +1,6 @@
 {
   "name": "yunomia",
-  "version": "0.1.42",
+  "version": "0.1.43",
   "private": true,
   "type": "module",
   "description": "Yunomia - Tauri shell for hosting Claude Code agent fleets on any project.",

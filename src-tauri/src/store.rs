@@ -187,9 +187,23 @@ pub struct ContextEstimateArgs {
     // which is wrong when multiple agents share a cwd (LEAD + CEO both
     // showing identical context %).
     pub agent_code: Option<String>,
+    // Optional. Frontend passes the agent's model code so we can size the
+    // context window correctly. Without this we assume 200k (Sonnet
+    // default), which over-reports % by ~5x for any agent on Opus + Claude
+    // Max (1M window) or any model with the [1m] extended-context tag.
+    pub model: Option<String>,
 }
 
-const CONTEXT_WINDOW_TOKENS: u64 = 200_000;
+// Per-model context window. Anything not recognised falls back to the
+// conservative 200k Sonnet/Haiku default. The [1m] suffix is Anthropic's tag
+// for extended-context variants (Sonnet [1m] = 1M).
+const CONTEXT_WINDOW_DEFAULT: u64 = 200_000;
+fn context_window_for_model(model: &str) -> u64 {
+    let m = model.to_ascii_lowercase();
+    if m.contains("[1m]") { return 1_000_000; }
+    if m.contains("opus") { return 1_000_000; }
+    CONTEXT_WINDOW_DEFAULT
+}
 
 fn claude_project_dir(cwd: &str) -> Result<PathBuf, String> {
     let sanitised = cwd.trim_start_matches('/').replace('/', "-").replace('.', "-");
@@ -272,13 +286,14 @@ pub fn agent_context_estimate(args: ContextEstimateArgs) -> Result<Option<Contex
         match newest { Some((p, _, b)) => (p, b), None => return Ok(None) }
     };
     let session_id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+    let window = args.model.as_deref().map(context_window_for_model).unwrap_or(CONTEXT_WINDOW_DEFAULT);
     // Prefer stats hook output when present.
     let stats_path = proj_dir.join(format!("{}-stats.json", session_id));
     if stats_path.exists() {
         if let Ok(raw) = fs::read_to_string(&stats_path) {
             #[derive(Deserialize)] struct Stats { tokens_used: u64, tokens_total: u64 }
             if let Ok(s) = serde_json::from_str::<Stats>(&raw) {
-                let total = if s.tokens_total > 0 { s.tokens_total } else { CONTEXT_WINDOW_TOKENS };
+                let total = if s.tokens_total > 0 { s.tokens_total } else { window };
                 let percent = ((s.tokens_used.min(total) * 100) / total) as u32;
                 return Ok(Some(ContextEstimate {
                     session_id,
@@ -291,7 +306,7 @@ pub fn agent_context_estimate(args: ContextEstimateArgs) -> Result<Option<Contex
         }
     }
     let tokens_estimated = bytes / 4;       // fallback heuristic
-    let percent = ((tokens_estimated * 100) / CONTEXT_WINDOW_TOKENS).min(100) as u32;
+    let percent = ((tokens_estimated * 100) / window).min(100) as u32;
     Ok(Some(ContextEstimate {
         session_id,
         bytes,
