@@ -14,6 +14,7 @@
 // (Rust watcher fires `compact://ready/<agent>` Tauri event) → /compact.
 
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { writeToAgent } from './mc-bridge.js';
 
 const STUB_TRIGGER_EVERY = 8;          // task-boundary events between auto-compacts
@@ -93,14 +94,36 @@ export async function fireCompact(agentCode) {
 
 // Manual trigger from UI button (or from the hard-ceiling stats path
 // once hooks are wired). Public so the dashboard / heartbeat can call it.
+//
+// Note: `/pre-compact` is NOT a built-in Claude Code slash command. The
+// scaffolded `.yunomia/agents/<code>/pre-compact.md` file is the prompt the
+// agent should run before compacting (summary of session state). Earlier
+// builds naively sent the literal `/pre-compact` slash to claude — claude
+// replied "Unknown command" and nothing happened. We now read the file's
+// content and send it as a regular prompt; the file's last line is
+// "Then trigger /compact." which is a real built-in.
 export async function firePreCompact(agentCode) {
   const ent = state.agents.get(agentCode) || { boundaryCount: 0 };
   if (ent.pendingPreCompact) return;
   ent.pendingPreCompact = true;
   state.agents.set(agentCode, ent);
   console.info(`[compact] /pre-compact for ${agentCode}`);
+  const cwd = window.yunomia?.state?.selectedProject;
+  let prompt = '';
+  if (cwd) {
+    try {
+      prompt = await invoke('agent_file_get', { args: { cwd, code: agentCode, kind: 'pre-compact' } });
+    } catch (err) {
+      console.warn(`[compact] couldn't read pre-compact.md for ${agentCode}`, err);
+    }
+  }
+  // Fallback if the file is missing/empty: a generic summary directive that
+  // ends in /compact (real built-in) so the agent still rotates context.
+  if (!prompt || !prompt.trim()) {
+    prompt = `Summarise this session in 200–500 words: tickets touched (with verdict), open questions, files modified, lessons learnt. Then run /compact.`;
+  }
   try {
-    await writeToAgent(agentCode, '/pre-compact\n');
+    await writeToAgent(agentCode, prompt);
   } catch (err) {
     console.warn(`[compact] /pre-compact write failed for ${agentCode}`, err);
     ent.pendingPreCompact = false;
