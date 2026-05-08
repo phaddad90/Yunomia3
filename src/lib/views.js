@@ -12,6 +12,170 @@ function fmtTime(iso) {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 }
 
+// ─── Goals ───
+// High-level goals the orchestrator drives toward. Editable from the UI for
+// kicking things off; CEO maintains the list from there via direct file
+// edits on .yunomia/goals.json.
+const GOAL_STATUS_LABELS = { pending:'Pending', in_progress:'In progress', blocked:'Blocked', done:'Done' };
+const GOAL_STATUSES = ['pending','in_progress','blocked','done'];
+
+export async function renderGoalsView(container, cwd) {
+  let goals = [];
+  try { goals = await invoke('goals_list', { args: { cwd } }) || []; } catch { goals = []; }
+  const sorted = [...goals].sort((a, b) => {
+    const order = { in_progress: 0, blocked: 1, pending: 2, done: 3 };
+    const oa = order[a.status] ?? 4;
+    const ob = order[b.status] ?? 4;
+    if (oa !== ob) return oa - ob;
+    return (b.updated_at || '').localeCompare(a.updated_at || '');
+  });
+  container.innerHTML = `
+    <div class="goals-cfg">
+      <header class="goals-header">
+        <h3>Goals</h3>
+        <button id="goal-add" class="btn-secondary" type="button">+ Add goal</button>
+      </header>
+      <ul class="goals-list">
+        ${sorted.map((g) => `
+          <li class="goal-row goal-${escapeHtml(g.status)}" data-id="${escapeHtml(g.id)}">
+            <header>
+              <select class="goal-status" data-id="${escapeHtml(g.id)}">
+                ${GOAL_STATUSES.map((s) => `<option value="${s}"${s===g.status?' selected':''}>${GOAL_STATUS_LABELS[s]}</option>`).join('')}
+              </select>
+              <input type="text" class="goal-title" data-id="${escapeHtml(g.id)}" value="${escapeHtml(g.title)}" maxlength="240" />
+              <span class="goal-owner" title="Owner agent code">${escapeHtml(g.owner || 'CEO')}</span>
+              <button class="btn-ghost goal-remove" data-id="${escapeHtml(g.id)}" title="Delete goal">✕</button>
+            </header>
+            <div class="goal-body">
+              <textarea class="goal-notes" data-id="${escapeHtml(g.id)}" rows="2" placeholder="Notes / context (CEO maintains)">${escapeHtml(g.notes_md || '')}</textarea>
+              ${g.ticket_human_ids?.length ? `<div class="goal-tickets">Tickets: ${g.ticket_human_ids.map((t) => `<span class="goal-ticket-pill">${escapeHtml(t)}</span>`).join(' ')}</div>` : ''}
+              <div class="goal-meta">Updated ${escapeHtml(fmtTime(g.updated_at))}</div>
+            </div>
+          </li>
+        `).join('')}
+      </ul>
+      ${!sorted.length ? `<div class="empty-pad">No goals yet. Click + Add goal to seed CEO with what we're driving toward.</div>` : ''}
+    </div>
+  `;
+  container.querySelector('#goal-add')?.addEventListener('click', async () => {
+    const title = prompt('Goal title (one line):');
+    if (!title || !title.trim()) return;
+    await invoke('goals_upsert', { args: { cwd, title: title.trim() } });
+    await renderGoalsView(container, cwd);
+  });
+  container.querySelectorAll('.goal-status').forEach((sel) => {
+    sel.addEventListener('change', async () => {
+      const id = sel.dataset.id;
+      const goal = goals.find((g) => g.id === id);
+      if (!goal) return;
+      await invoke('goals_upsert', { args: { cwd, id, title: goal.title, status: sel.value, owner: goal.owner, notesMd: goal.notes_md, ticketHumanIds: goal.ticket_human_ids } });
+      await renderGoalsView(container, cwd);
+    });
+  });
+  container.querySelectorAll('.goal-title, .goal-notes').forEach((el) => {
+    el.addEventListener('blur', async () => {
+      const id = el.dataset.id;
+      const goal = goals.find((g) => g.id === id);
+      if (!goal) return;
+      const titleEl = container.querySelector(`.goal-title[data-id="${id}"]`);
+      const notesEl = container.querySelector(`.goal-notes[data-id="${id}"]`);
+      const newTitle = titleEl?.value?.trim() || goal.title;
+      const newNotes = notesEl?.value || '';
+      if (newTitle === goal.title && newNotes === (goal.notes_md || '')) return;
+      await invoke('goals_upsert', { args: { cwd, id, title: newTitle, status: goal.status, owner: goal.owner, notesMd: newNotes, ticketHumanIds: goal.ticket_human_ids } });
+      // Don't full-rerender on blur — disruptive; just update memo so subsequent edits diff against new state.
+      goal.title = newTitle; goal.notes_md = newNotes;
+    });
+  });
+  container.querySelectorAll('.goal-remove').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const ok = await ask('Delete this goal? CEO will lose context for it.', { title: 'Delete goal' });
+      if (!ok) return;
+      await invoke('goals_remove', { args: { cwd, id } });
+      await renderGoalsView(container, cwd);
+    });
+  });
+}
+
+// ─── Questions ───
+// Questions agents can't proceed without an operator answer to. Operator
+// answers via textarea or option-click; agent picks up the answer on next
+// heartbeat. Replaces the back-and-forth where the operator had to manually
+// prompt every blocker.
+export async function renderQuestionsView(container, cwd) {
+  let qs = [];
+  try { qs = await invoke('questions_list', { args: { cwd } }) || []; } catch { qs = []; }
+  const open = qs.filter((q) => !q.answer_md).sort((a, b) => (b.asked_at || '').localeCompare(a.asked_at || ''));
+  const answered = qs.filter((q) => q.answer_md).sort((a, b) => (b.answered_at || '').localeCompare(a.answered_at || ''));
+  const renderQCard = (q, isOpen) => `
+    <li class="question-row" data-id="${escapeHtml(q.id)}">
+      <header>
+        <span class="question-agent">${escapeHtml(q.agent_code || '?')}</span>
+        ${q.context_ticket ? `<span class="question-ticket">${escapeHtml(q.context_ticket)}</span>` : ''}
+        <span class="question-when">${escapeHtml(fmtTime(q.asked_at))}</span>
+      </header>
+      <div class="question-body">${escapeHtml(q.body_md)}</div>
+      ${isOpen ? `
+        ${q.options?.length ? `<div class="question-options">${q.options.map((o) => `<button class="question-option" data-id="${escapeHtml(q.id)}" data-option="${escapeHtml(o)}">${escapeHtml(o)}</button>`).join('')}</div>` : ''}
+        <textarea class="question-answer" data-id="${escapeHtml(q.id)}" rows="3" placeholder="Your answer (Cmd/Ctrl+Enter to submit)"></textarea>
+        <button class="btn-secondary question-submit" data-id="${escapeHtml(q.id)}" type="button">Submit answer</button>
+      ` : `
+        <div class="question-answer-shown">${escapeHtml(q.answer_md)}</div>
+        <div class="question-meta">Answered ${escapeHtml(fmtTime(q.answered_at))}</div>
+      `}
+    </li>
+  `;
+  container.innerHTML = `
+    <div class="questions-cfg">
+      <section class="questions-open">
+        <h3>Open (${open.length})</h3>
+        ${open.length ? `<ul class="questions-list">${open.map((q) => renderQCard(q, true)).join('')}</ul>` : `<div class="empty-pad">No open questions. Agents will ask here when they need your input to unblock a goal.</div>`}
+      </section>
+      ${answered.length ? `
+        <section class="questions-answered">
+          <details>
+            <summary>Answered (${answered.length})</summary>
+            <ul class="questions-list">${answered.map((q) => renderQCard(q, false)).join('')}</ul>
+          </details>
+        </section>
+      ` : ''}
+    </div>
+  `;
+  const submitAnswer = async (id, answer) => {
+    if (!answer?.trim()) return;
+    await invoke('questions_answer', { args: { cwd, id, answerMd: answer.trim() } });
+    await renderQuestionsView(container, cwd);
+  };
+  container.querySelectorAll('.question-submit').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const ta = container.querySelector(`.question-answer[data-id="${id}"]`);
+      await submitAnswer(id, ta?.value || '');
+    });
+  });
+  container.querySelectorAll('.question-answer').forEach((ta) => {
+    ta.addEventListener('keydown', async (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        await submitAnswer(ta.dataset.id, ta.value);
+      }
+    });
+  });
+  container.querySelectorAll('.question-option').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      await submitAnswer(btn.dataset.id, btn.dataset.option);
+    });
+  });
+}
+
+export async function unansweredQuestionsCount(cwd) {
+  try {
+    const qs = await invoke('questions_list', { args: { cwd } }) || [];
+    return qs.filter((q) => !q.answer_md).length;
+  } catch { return 0; }
+}
+
 // ─── Activity feed ───
 export async function renderActivityView(container, cwd) {
   let rows = [];

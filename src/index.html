@@ -58,6 +58,8 @@
           </div>
           <nav class="subtabs" id="subtabs">
             <button class="subtab active" data-sub="kanban">Kanban</button>
+            <button class="subtab" data-sub="goals">Goals</button>
+            <button class="subtab" data-sub="questions">Questions <span class="subtab-badge" id="sub-badge-questions" hidden>0</span></button>
             <button class="subtab" data-sub="activity">Activity</button>
             <button class="subtab" data-sub="inbox">Inbox <span class="subtab-badge" id="sub-badge-inbox" hidden>0</span></button>
             <button class="subtab" data-sub="lessons">Lessons</button>
@@ -90,6 +92,8 @@
             </select>
           </div>
           <div id="kanban-root" class="kanban-root subview" data-view="kanban"></div>
+          <div id="goals-root" class="subview" data-view="goals" hidden></div>
+          <div id="questions-root" class="subview" data-view="questions" hidden></div>
           <div id="activity-root" class="subview" data-view="activity" hidden></div>
           <div id="inbox-root" class="subview" data-view="inbox" hidden></div>
           <div id="lessons-root" class="subview" data-view="lessons" hidden></div>

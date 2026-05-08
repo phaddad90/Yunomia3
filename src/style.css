@@ -622,6 +622,42 @@ body {
 .report-by-agent li { padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .report-by-agent .muted { color: var(--text-mid); float: right; }
 
+/* Goals + Questions */
+.goals-cfg, .questions-cfg { padding: 12px; }
+.goals-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.goals-header h3, .questions-cfg h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-mid); margin: 0; }
+.goals-list, .questions-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.goal-row { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.goal-row > header { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.goal-status { padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px; }
+.goal-title { flex: 1; padding: 4px 6px; border: 1px solid transparent; border-radius: 4px; font-size: 13px; font-weight: 500; background: transparent; color: var(--text-hi); }
+.goal-title:focus, .goal-title:hover { border-color: var(--border); background: var(--surface-2); }
+.goal-owner { font-size: 10px; color: var(--text-low); padding: 2px 6px; background: var(--surface-2); border-radius: 4px; }
+.goal-remove { color: var(--text-low); }
+.goal-row.goal-in_progress { border-left: 3px solid #16a34a; }
+.goal-row.goal-blocked { border-left: 3px solid #dc2626; }
+.goal-row.goal-done { opacity: 0.55; }
+.goal-notes { width: 100%; min-height: 40px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; font-size: 12px; resize: vertical; background: var(--surface-2); color: var(--text-hi); }
+.goal-tickets { font-size: 11px; color: var(--text-mid); margin-top: 4px; }
+.goal-ticket-pill { display: inline-block; padding: 1px 6px; background: var(--surface-2); border-radius: 999px; font-family: monospace; font-size: 10px; margin-right: 4px; }
+.goal-meta { font-size: 10px; color: var(--text-low); margin-top: 4px; }
+
+.questions-open, .questions-answered { margin-bottom: 16px; }
+.questions-answered details summary { cursor: pointer; font-size: 12px; color: var(--text-mid); padding: 6px 0; }
+.question-row { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.question-row > header { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 11px; }
+.question-agent { font-weight: 600; color: var(--pepper); }
+.question-ticket { font-family: monospace; padding: 1px 6px; background: var(--surface-2); border-radius: 4px; font-size: 10px; }
+.question-when { color: var(--text-low); margin-left: auto; }
+.question-body { font-size: 13px; line-height: 1.4; margin-bottom: 8px; white-space: pre-wrap; }
+.question-options { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.question-option { padding: 4px 10px; border: 1px solid var(--pepper); background: transparent; color: var(--pepper); border-radius: 4px; cursor: pointer; font-size: 12px; }
+.question-option:hover { background: var(--pepper); color: white; }
+.question-answer { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font: inherit; font-size: 12px; resize: vertical; background: var(--surface-2); color: var(--text-hi); margin-bottom: 6px; }
+.question-submit { font-size: 12px; }
+.question-answer-shown { font-size: 12px; padding: 6px 8px; background: var(--surface-2); border-radius: 4px; white-space: pre-wrap; }
+.question-meta { font-size: 10px; color: var(--text-low); margin-top: 4px; }
+
 /* Agents config */
 .agents-cfg { padding: 12px; }
 .agents-cfg header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 12px; flex-wrap: wrap; }

@@ -328,6 +328,180 @@ pub fn comments_create(args: CommentCreateArgs) -> Result<Comment, String> {
     Ok(comment)
 }
 
+// ─── Goals ─────────────────────────────────────────────────────────────
+// High-level goals the orchestrator (CEO/LEAD) drives the project toward.
+// File-backed at <cwd>/.yunomia/goals.json. Agents read+write directly via
+// the Edit tool — same file-edit-IS-the-transition pattern as tickets.json.
+// The frontend reads via goals_list (poller) and offers the operator a
+// simple add/remove form for kicking things off; from then on CEO is meant
+// to maintain the list.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct Goal {
+    pub id: String,
+    pub title: String,
+    pub status: String,                  // pending | in_progress | blocked | done
+    pub owner: String,                   // agent code (usually CEO) or "operator"
+    pub notes_md: String,
+    pub ticket_human_ids: Vec<String>,   // related ticket human_ids for traceability
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl Default for Goal {
+    fn default() -> Self { Self {
+        id: String::new(), title: String::new(), status: "pending".into(),
+        owner: "CEO".into(), notes_md: String::new(),
+        ticket_human_ids: Vec::new(), created_at: String::new(), updated_at: String::new(),
+    }}
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalsListArgs { pub cwd: String }
+#[tauri::command]
+pub fn goals_list(args: GoalsListArgs) -> Result<Vec<Goal>, String> {
+    let dir = ensure_project_local_dir(&args.cwd)?;
+    let path = dir.join("goals.json");
+    let goals: Vec<Goal> = read_json(&path)?;
+    Ok(goals)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalUpsertArgs {
+    pub cwd: String,
+    pub id: Option<String>,             // when None, treat as create
+    pub title: String,
+    pub status: Option<String>,
+    pub owner: Option<String>,
+    pub notes_md: Option<String>,
+    pub ticket_human_ids: Option<Vec<String>>,
+}
+#[tauri::command]
+pub fn goals_upsert(args: GoalUpsertArgs) -> Result<Goal, String> {
+    let dir = ensure_project_local_dir(&args.cwd)?;
+    let path = dir.join("goals.json");
+    let mut goals: Vec<Goal> = read_json(&path)?;
+    let now = now_iso();
+    let id = args.id.clone().unwrap_or_else(new_uuid);
+    let existing = goals.iter().position(|g| g.id == id);
+    let g = Goal {
+        id: id.clone(),
+        title: args.title.clone(),
+        status: args.status.unwrap_or_else(|| "pending".into()),
+        owner: args.owner.unwrap_or_else(|| "CEO".into()),
+        notes_md: args.notes_md.unwrap_or_default(),
+        ticket_human_ids: args.ticket_human_ids.unwrap_or_default(),
+        created_at: existing.and_then(|i| goals.get(i)).map(|g| g.created_at.clone()).unwrap_or_else(|| now.clone()),
+        updated_at: now,
+    };
+    if let Some(i) = existing { goals[i] = g.clone(); } else { goals.push(g.clone()); }
+    write_json(&path, &goals)?;
+    Ok(g)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoalRemoveArgs { pub cwd: String, pub id: String }
+#[tauri::command]
+pub fn goals_remove(args: GoalRemoveArgs) -> Result<(), String> {
+    let dir = ensure_project_local_dir(&args.cwd)?;
+    let path = dir.join("goals.json");
+    let mut goals: Vec<Goal> = read_json(&path)?;
+    goals.retain(|g| g.id != args.id);
+    write_json(&path, &goals)
+}
+
+// ─── Questions ──────────────────────────────────────────────────────────
+// When CEO (or any agent) is stuck on a goal/ticket and needs operator
+// input, they append a Question to <cwd>/.yunomia/questions.json. The
+// operator answers via the Questions dashboard tab; the agent picks up the
+// answer on its next heartbeat and unblocks. Stops the "idle heartbeats
+// with nothing to do" pattern when there's actually work waiting on a
+// human decision.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct Question {
+    pub id: String,
+    pub agent_code: String,              // who's asking
+    pub body_md: String,
+    pub context_ticket: Option<String>,  // related ticket human_id, if any
+    pub options: Option<Vec<String>>,    // optional multi-choice; null = free-text
+    pub asked_at: String,
+    pub answer_md: Option<String>,
+    pub answered_at: Option<String>,
+}
+impl Default for Question {
+    fn default() -> Self { Self {
+        id: String::new(), agent_code: String::new(), body_md: String::new(),
+        context_ticket: None, options: None, asked_at: String::new(),
+        answer_md: None, answered_at: None,
+    }}
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionsListArgs { pub cwd: String }
+#[tauri::command]
+pub fn questions_list(args: QuestionsListArgs) -> Result<Vec<Question>, String> {
+    let dir = ensure_project_local_dir(&args.cwd)?;
+    let path = dir.join("questions.json");
+    let qs: Vec<Question> = read_json(&path)?;
+    Ok(qs)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionCreateArgs {
+    pub cwd: String,
+    pub agent_code: String,
+    pub body_md: String,
+    pub context_ticket: Option<String>,
+    pub options: Option<Vec<String>>,
+}
+#[tauri::command]
+pub fn questions_create(args: QuestionCreateArgs) -> Result<Question, String> {
+    let dir = ensure_project_local_dir(&args.cwd)?;
+    let path = dir.join("questions.json");
+    let mut qs: Vec<Question> = read_json(&path)?;
+    let q = Question {
+        id: new_uuid(),
+        agent_code: args.agent_code,
+        body_md: args.body_md,
+        context_ticket: args.context_ticket,
+        options: args.options,
+        asked_at: now_iso(),
+        answer_md: None,
+        answered_at: None,
+    };
+    qs.push(q.clone());
+    write_json(&path, &qs)?;
+    Ok(q)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionAnswerArgs { pub cwd: String, pub id: String, pub answer_md: String }
+#[tauri::command]
+pub fn questions_answer(args: QuestionAnswerArgs) -> Result<Question, String> {
+    let dir = ensure_project_local_dir(&args.cwd)?;
+    let path = dir.join("questions.json");
+    let mut qs: Vec<Question> = read_json(&path)?;
+    let now = now_iso();
+    let mut updated: Option<Question> = None;
+    for q in qs.iter_mut() {
+        if q.id == args.id {
+            q.answer_md = Some(args.answer_md.clone());
+            q.answered_at = Some(now.clone());
+            updated = Some(q.clone());
+            break;
+        }
+    }
+    let updated = updated.ok_or_else(|| format!("question {} not found", args.id))?;
+    write_json(&path, &qs)?;
+    Ok(updated)
+}
+
 // Per-project lifecycle state: onboarding (no tickets yet, lead agent
 // interviewing the user) vs active (brief approved, tickets in flight).
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -624,6 +798,22 @@ The full brief lives at `.yunomia/brief.md` in the project root.
 3. If your queue is empty, idle until something lands. Don't invent work.
 
 {authority_block}
+## How orchestration actually works in Yunomia (CEO/LEAD only — skip if you're a worker)
+
+Yunomia gives you THREE files for driving the project, not just `tickets.json`:
+
+1. `.yunomia/goals.json` — high-level goals (e.g. `Ship DPD shipping by Mon`). Schema:
+   `[{{ \"id\": \"<uuid>\", \"title\": \"...\", \"status\": \"pending|in_progress|blocked|done\", \"owner\": \"CEO\", \"notes_md\": \"...\", \"ticket_human_ids\": [\"PRJ-001\"], \"created_at\": \"...\", \"updated_at\": \"...\" }}]`
+   Edit this file as you make progress — flip status, add tickets to a goal, append to notes_md.
+
+2. `.yunomia/tickets.json` — concrete work units (covered above).
+
+3. `.yunomia/questions.json` — when you genuinely cannot proceed without operator input. Schema:
+   `[{{ \"id\": \"<uuid>\", \"agent_code\": \"{code}\", \"body_md\": \"...\", \"context_ticket\": \"PRJ-001\" or null, \"options\": [\"a\",\"b\"] or null, \"asked_at\": \"<iso>\", \"answer_md\": null, \"answered_at\": null }}]`
+   Append a question only when you've exhausted what you can do. The operator replies via the Questions dashboard tab; you'll see `answer_md` populated on next heartbeat. Then act on the answer immediately — do NOT re-ask.
+
+Heartbeats hand you the lists explicitly. Treat the heartbeat decision tree as authoritative: advance a goal, route a ticket, file a question, OR sleep — never describe state without acting.
+
 ## Canonical ticket fields (use these EXACT values, no inventing)
 
 When you read or write `.yunomia/tickets.json`, every ticket must use the canonical vocabulary or it will be silently dropped from the kanban (it lands in an `Other / needs status fix` column with a warning pill instead of a real one).

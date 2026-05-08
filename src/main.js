@@ -15,7 +15,7 @@ import { initKanban, setKanbanProject, startKanbanPoll, reconcileInFlightAssignm
 import { loadOnboardingForProject, renderOnboardingView, reopenOnboarding } from './lib/onboarding.js';
 import { refresh as refreshKanban, getTicketStats, setFilter as setKanbanFilter } from './lib/kanban.js';
 import { renderLessonsView, bindLessonModal } from './lib/lessons.js';
-import { renderActivityView, renderInboxView, renderReportsView, renderAgentsView, unprocessedInboxCount } from './lib/views.js';
+import { renderActivityView, renderInboxView, renderReportsView, renderAgentsView, unprocessedInboxCount, renderGoalsView, renderQuestionsView, unansweredQuestionsCount } from './lib/views.js';
 import { renderFileTree, openPath, revealPath, copyPath, showContextMenu } from './lib/files.js';
 import { renderCredentials } from './lib/credentials.js';
 import { renderDeploys } from './lib/deploys.js';
@@ -1045,6 +1045,8 @@ async function renderSubview(which) {
   const cwd = state.selectedProject;
   if (!cwd) return;
   if (which === 'kanban')   { /* kanban renders itself via initKanban */ }
+  if (which === 'goals')    await renderGoalsView(document.getElementById('goals-root'), cwd);
+  if (which === 'questions'){ await renderQuestionsView(document.getElementById('questions-root'), cwd); refreshQuestionsBadge(); }
   if (which === 'activity') await renderActivityView(document.getElementById('activity-root'), cwd);
   if (which === 'inbox')    { await renderInboxView(document.getElementById('inbox-root'), cwd); refreshInboxBadge(); }
   if (which === 'lessons')  await renderLessonsView(document.getElementById('lessons-root'), cwd);
@@ -1062,6 +1064,18 @@ async function refreshInboxBadge() {
   if (n > 0) { badge.hidden = false; badge.textContent = String(n); }
   else { badge.hidden = true; }
 }
+async function refreshQuestionsBadge() {
+  const cwd = state.selectedProject;
+  const badge = document.getElementById('sub-badge-questions');
+  if (!cwd || !badge) return;
+  const n = await unansweredQuestionsCount(cwd);
+  if (n > 0) { badge.hidden = false; badge.textContent = String(n); }
+  else { badge.hidden = true; }
+}
+// Poll the open-questions count every 10s so the tab badge stays current
+// even when the operator isn't on the Questions tab. Same cadence as the
+// inbox badge implicitly is — they're both "human attention required" signals.
+setInterval(() => { void refreshQuestionsBadge(); }, 10_000);
 window.__refreshInboxBadge = refreshInboxBadge;
 window.__renderLessons = () => renderSubview('lessons');
 bindSubtabs();
