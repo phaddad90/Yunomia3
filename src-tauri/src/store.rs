@@ -127,7 +127,26 @@ pub struct SessionInfo {
 pub struct EnumerateArgs {
     pub cwd: String,
     pub limit: Option<usize>,
+    /// When true, include crashed-spawn jsonls that would normally be filtered
+    /// out (sessions smaller than `MIN_USEFUL_SESSION_BYTES`). Default false.
+    /// Useful for diagnostic UIs that want every artefact, not just usable
+    /// resumable sessions.
+    #[serde(default)]
+    pub include_crashed: bool,
 }
+
+/// Sessions smaller than this are almost always crash residue: the kickoff
+/// prompt was written into the JSONL, the spawn died (PATH issue, missing
+/// binary, immediate-exit Windows error), and the operator never got to type
+/// a single message. Filtering them out keeps the Resume banner usable on
+/// projects that have accumulated dozens of failed spawns over time.
+///
+/// Calibrated against real data: a crashed claude session is typically
+/// 1-2 KB (permission-mode + file-history-snapshot + maybe a system message).
+/// A session with at least one operator turn + claude reply is >8 KB. 4 KB
+/// is a conservative threshold that keeps any real conversation while
+/// dropping the crash residue.
+const MIN_USEFUL_SESSION_BYTES: u64 = 4_096;
 
 #[tauri::command]
 pub fn enumerate_sessions(args: EnumerateArgs) -> Result<Vec<SessionInfo>, String> {
@@ -146,6 +165,8 @@ pub fn enumerate_sessions(args: EnumerateArgs) -> Result<Vec<SessionInfo>, Strin
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("jsonl") { continue; }
         let meta = match entry.metadata() { Ok(m) => m, Err(_) => continue };
+        // Drop crashed-spawn residue unless the caller asked for it.
+        if !args.include_crashed && meta.len() < MIN_USEFUL_SESSION_BYTES { continue; }
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
         let modified = meta
             .modified()
