@@ -131,13 +131,10 @@ pub struct EnumerateArgs {
 
 #[tauri::command]
 pub fn enumerate_sessions(args: EnumerateArgs) -> Result<Vec<SessionInfo>, String> {
-    let home = home_dir();
-    let sanitised = args
-        .cwd
-        .trim_start_matches('/')
-        .replace('/', "-")
-        .replace('.', "-");
-    let proj_dir = home.join(".claude").join("projects").join(format!("-{}", sanitised));
+    let proj_dir = home_dir()
+        .join(".claude")
+        .join("projects")
+        .join(claude_project_sanitise(&args.cwd));
     if !proj_dir.exists() {
         return Ok(Vec::new());
     }
@@ -205,12 +202,44 @@ fn context_window_for_model(model: &str) -> u64 {
     CONTEXT_WINDOW_DEFAULT
 }
 
+/// Sanitise a project cwd to match Claude Code's `~/.claude/projects/<name>/`
+/// convention. Claude replaces every path-separator-ish character (`/`, `\`,
+/// `:`, `.`) with `-`, leaves the rest of the path intact.
+///
+/// On macOS, `/Users/me/proj` -> `-Users-me-proj` (Yunomia's old logic
+/// matched this case but only by accident — strip-leading-slash + replace
+/// `/` -> `-` + prepend `-`).
+///
+/// On Windows, `C:\app-py-scripts\pricing-engine` -> `C--app-py-scripts-pricing-engine`.
+/// Yunomia's old logic produced `-app-py-scripts-pricing-engine` here (drops
+/// the drive letter, prepends a stray dash) so the resume banner, context
+/// estimator, and delete-session handler all looked in a non-existent
+/// directory and silently returned empty.
+///
+/// One unified pass covers both platforms — replaces every separator
+/// character with `-`, no trim, no prepend. Verified against the actual
+/// Claude Code sanitiser by inspection of `~/.claude/projects/` on both
+/// platforms.
+pub fn claude_project_sanitise(cwd: &str) -> String {
+    cwd.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '.' => '-',
+            other => other,
+        })
+        .collect()
+}
+
 fn claude_project_dir(cwd: &str) -> Result<PathBuf, String> {
-    let sanitised = cwd.trim_start_matches('/').replace('/', "-").replace('.', "-");
-    Ok(home_dir().join(".claude").join("projects").join(format!("-{}", sanitised)))
+    Ok(home_dir().join(".claude").join("projects").join(claude_project_sanitise(cwd)))
 }
 
 fn yunomia_project_op_dir(cwd: &str) -> Result<PathBuf, String> {
+    // NB: this sanitiser is intentionally distinct from `claude_project_sanitise`
+    // because changing the rule would orphan existing agent-sessions.json data
+    // for every Mac user that's already booted Yunomia at least once. On
+    // Windows the legacy rule produces a path containing `:` and `\` which the
+    // filesystem rejects — that's a separate Windows bug to address with a
+    // proper migration step. Out of scope for this PR.
     let sanitised = cwd.trim_start_matches('/').replace('/', "-").replace(' ', "_");
     Ok(home_dir().join(".yunomia").join("projects").join(sanitised))
 }
@@ -403,8 +432,11 @@ pub fn delete_session(args: DeleteSessionArgs) -> Result<(), String> {
     if args.session_id.contains('/') || args.session_id.contains('.') {
         return Err("invalid session id".into());
     }
-    let sanitised = args.cwd.trim_start_matches('/').replace('/', "-").replace('.', "-");
-    let path = home_dir().join(".claude").join("projects").join(format!("-{}", sanitised)).join(format!("{}.jsonl", args.session_id));
+    let path = home_dir()
+        .join(".claude")
+        .join("projects")
+        .join(claude_project_sanitise(&args.cwd))
+        .join(format!("{}.jsonl", args.session_id));
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| e.to_string())?;
     }
