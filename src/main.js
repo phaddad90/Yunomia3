@@ -935,6 +935,16 @@ async function killPty(key) {
   $$('#pane-tabs .tab').forEach((t) => { if (t.dataset.pane === key) t.remove(); });
   $$('#panes .pane').forEach((p) => { if (p.dataset.pane === key) p.remove(); });
   if (state.activePane === key) setActivePane('dashboard');
+  // If the killed pty was LEAD during onboarding, re-render the dashboard
+  // so the onboarding panel re-evaluates leadRunning and re-shows the
+  // "Spawn lead agent" form. Without this the user is stuck on the stale
+  // "Lead is running in the LEAD tab" message with no LEAD tab to return
+  // to and no path to spawn a fresh one.
+  // ptyKey format: `${safe_cwd}__${code}` — code is the trailing segment.
+  const code = key.split('__').pop();
+  if (code === 'LEAD') {
+    try { await renderProjectView(); } catch (e) { console.warn('post-kill re-render failed', e); }
+  }
 }
 
 function tabEmoji(code) {
