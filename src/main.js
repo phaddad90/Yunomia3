@@ -77,11 +77,44 @@ const LS_PROJECTS = 'yunomia.projects';
 const LS_SELECTED = 'yunomia.selectedProject';
 const ADD_PROJECT_VALUE = '__add__';
 
+// Normalise a single project path for the current platform. Used both as a
+// migration path (rewrite legacy entries on boot) and as a defensive call
+// before adding a new project. Pure function — no IO, just string surgery.
+function normaliseProjectPath(path) {
+  if (!path) return path;
+  if (!IS_MAC && /^\/[^/]/.test(path)) {
+    // Windows: legacy POSIX-rooted paths (e.g. `/app-marketing`) were stored
+    // before the picker grew the drive-letter regex check. Claude on Windows
+    // can't resolve a cwd starting with `/`, so spawned ptys exit immediately
+    // with STATUS_CONTROL_C_EXIT (0xC000013A / 3221225786). Default to drive
+    // C: + backslash separators; if the user actually had it on D: or E:
+    // they'll need to remove and re-add. Captured in the diag log so the
+    // operator can spot the migration.
+    const fixed = 'C:' + path.replace(/\//g, '\\');
+    if (typeof window !== 'undefined' && typeof window.__appendLog === 'function') {
+      window.__appendLog('project.migrate', `legacy=${path} -> ${fixed}`);
+    }
+    return fixed;
+  }
+  return path;
+}
+
 function loadProjects() {
   try {
     state.projects = JSON.parse(localStorage.getItem(LS_PROJECTS) || '[]');
   } catch { state.projects = []; }
-  state.selectedProject = localStorage.getItem(LS_SELECTED) || state.projects[0] || '';
+  // Migrate any legacy POSIX-rooted paths that were saved before the picker
+  // grew the Windows drive-letter regex. De-dup in case the migration ends
+  // up colliding with a freshly-added correctly-formed entry.
+  const before = JSON.stringify(state.projects);
+  state.projects = Array.from(new Set(state.projects.map(normaliseProjectPath)));
+  if (JSON.stringify(state.projects) !== before) {
+    localStorage.setItem(LS_PROJECTS, JSON.stringify(state.projects));
+  }
+  state.selectedProject = normaliseProjectPath(localStorage.getItem(LS_SELECTED) || state.projects[0] || '');
+  if (state.selectedProject !== localStorage.getItem(LS_SELECTED)) {
+    localStorage.setItem(LS_SELECTED, state.selectedProject || '');
+  }
 }
 function saveProjects() {
   localStorage.setItem(LS_PROJECTS, JSON.stringify(state.projects));
@@ -181,6 +214,10 @@ function bindAddProjectModal() {
       alert('Use an absolute path. Examples: /Users/me/project (macOS/Linux) or C:\\Users\\me\\project (Windows)');
       return;
     }
+    // On Windows, a path that starts with `/` (e.g. user pasted /foo) is a
+    // legacy POSIX-style entry that claude can't resolve. Normalise to drive
+    // C: with backslash separators before storing.
+    path = normaliseProjectPath(path);
     if (!state.projects.includes(path)) state.projects.push(path);
     state.selectedProject = path;
     saveProjects();
@@ -272,7 +309,7 @@ function closeSpawnModal() { $('#spawn-modal').classList.add('hidden'); }
 async function submitSpawn() {
   const code = $('#spawn-code').value;
   const model = $('#spawn-model').value || AGENT_MODELS_DEFAULT[code] || 'claude-sonnet-4-6';
-  const cwd = ($('#spawn-cwd').value || state.selectedProject || '').trim();
+  const cwd = normaliseProjectPath(($('#spawn-cwd').value || state.selectedProject || '').trim());
   if (!cwd) { alert('Pick a project first (top-bar).'); return; }
   // Auto-add to project list if it's a new path.
   if (!state.projects.includes(cwd)) {
