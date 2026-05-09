@@ -403,7 +403,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   const composer = document.createElement('div');
   composer.className = 'composer';
   composer.innerHTML = `
-    <textarea class="composer-input" rows="1" placeholder="Message ${escapeHtml(code)}…  (Enter send · Shift+Enter newline · paste / drop images · Esc cancels claude · ↑↓ arrows pass through)"></textarea>
+    <textarea class="composer-input" rows="1" placeholder="Message ${escapeHtml(code)}…  (Enter send · empty Enter confirms TUI menu · Shift+Enter newline · Esc cancels · ↑↓ pass through)"></textarea>
     <button class="composer-dismiss" type="button" title="Dismiss claude menu prompt (sends '0' raw)">0</button>
     <button class="composer-send" type="button" title="Send (Enter)">↵</button>
   `;
@@ -460,6 +460,15 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   composerInput.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' && !ev.shiftKey) {
       ev.preventDefault();
+      // Empty composer + Enter passes through `\r` so the user can confirm
+      // a TUI menu prompt (e.g. claude code's "Enter to confirm" trust /
+      // resume / compact dialogs) without typing the digit they just want
+      // to accept the highlighted default. Mirrors the existing
+      // empty-composer Esc/Tab/arrow-key passthrough below.
+      if (!composerInput.value) {
+        sendRaw('\r');
+        return;
+      }
       submitComposer();
       return;
     }
