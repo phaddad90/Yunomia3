@@ -214,7 +214,7 @@
             </div>
           </li>
           <li>Sign in to Claude Code with your Anthropic account once installation finishes (the installer will prompt you).</li>
-          <li>Quit Yunomia (⌘Q) and reopen from Applications.</li>
+          <li>Quit Yunomia and reopen.</li>
         </ol>
         <p class="claude-note">Yunomia checks for Claude Code each time it launches. Once installed, this dialog stops appearing.</p>
         <h4>If Claude Code IS already installed</h4>
@@ -271,12 +271,9 @@
       </section>
       <section class="settings-section">
         <h4>Keyboard shortcuts</h4>
-        <table class="settings-shortcuts">
-          <tr><td><kbd>⌘T</kbd> / <kbd>Ctrl+T</kbd></td><td>Spawn agent (active phase)</td></tr>
-          <tr><td><kbd>⌘W</kbd> / <kbd>Ctrl+W</kbd></td><td>Close current tab</td></tr>
-          <tr><td><kbd>⌘1</kbd>-<kbd>⌘9</kbd> / <kbd>Ctrl+1</kbd>-<kbd>Ctrl+9</kbd></td><td>Switch to tab N</td></tr>
-          <tr><td><kbd>⌘R</kbd> / <kbd>Ctrl+R</kbd></td><td>Reload Yunomia</td></tr>
-        </table>
+        <!-- Rows populated by openSettings() based on platform so Windows /
+             Linux users see Ctrl-prefixed shortcuts and Mac users see ⌘. -->
+        <table class="settings-shortcuts" id="settings-shortcuts-table"></table>
       </section>
       <div class="modal-actions">
         <button type="button" id="settings-close" class="btn-primary">Close</button>

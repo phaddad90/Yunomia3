@@ -26,6 +26,26 @@ import { bootCheckForUpdates, installUpdate } from './lib/updater.js';
 import { getVersion } from '@tauri-apps/api/app';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
+// Platform detection — settings UI, path placeholders, and any other
+// platform-conditional cosmetic strings should branch on this. Functional
+// keyboard handlers already accept e.metaKey OR e.ctrlKey so the bindings
+// work everywhere; this constant only governs what we *display*.
+const IS_MAC = /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+const MOD_KEY = IS_MAC ? '⌘' : 'Ctrl+';
+const PATH_HINT = IS_MAC
+  ? '/Users/<you>/Projects/my-project'
+  : 'C:\\Users\\<you>\\Projects\\my-project';
+
+// Replace the Mac-only path placeholders that ship in static index.html with
+// platform-appropriate hints. Done once at boot; the elements are static so
+// no re-application needed.
+(function applyPlatformHints() {
+  const projPath = document.getElementById('proj-path');
+  if (projPath) projPath.placeholder = PATH_HINT;
+  const spawnCwd = document.getElementById('spawn-cwd');
+  if (spawnCwd) spawnCwd.placeholder = PATH_HINT;
+})();
+
 const AGENT_MODELS_DEFAULT = {
   LEAD:'claude-opus-4-7',
   CEO: 'claude-opus-4-7',
@@ -1478,6 +1498,20 @@ function bindSettings() {
 }
 async function openSettings() {
   const modal = document.getElementById('settings-modal');
+  // Keyboard shortcuts — render with platform-appropriate modifier so Windows
+  // / Linux users see Ctrl-prefixed shortcuts and Mac users see ⌘. Ctrl+Tab
+  // is shown literally on every platform because it's the same key on all of
+  // them (xterm + window.addEventListener both treat it as ctrlKey).
+  const shortcutsTbl = document.getElementById('settings-shortcuts-table');
+  if (shortcutsTbl) {
+    shortcutsTbl.innerHTML = `
+      <tr><td><kbd>${MOD_KEY}T</kbd></td><td>Spawn agent (active phase)</td></tr>
+      <tr><td><kbd>${MOD_KEY}W</kbd></td><td>Close current tab</td></tr>
+      <tr><td><kbd>${MOD_KEY}1</kbd>–<kbd>${MOD_KEY}9</kbd></td><td>Switch to tab N</td></tr>
+      <tr><td><kbd>${MOD_KEY}R</kbd></td><td>Reload Yunomia</td></tr>
+      <tr><td><kbd>Ctrl+Tab</kbd> / <kbd>Ctrl+Shift+Tab</kbd></td><td>Cycle agent panes</td></tr>
+    `;
+  }
   // Theme toggle (icon buttons)
   const pref = localStorage.getItem(LS_THEME) || 'light';
   modal.querySelectorAll('#theme-toggle button').forEach((btn) => {
