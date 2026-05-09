@@ -291,8 +291,9 @@ function toLocalDt(iso) {
 }
 
 function projectLabel(p) {
+  // Splits on both `/` and `\` so Windows paths return the trailing segment.
   if (!p) return '?';
-  const parts = p.split('/').filter(Boolean);
+  const parts = p.split(/[\/\\]/).filter(Boolean);
   return parts[parts.length - 1] || p;
 }
 
