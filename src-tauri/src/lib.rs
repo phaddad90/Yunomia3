@@ -5,6 +5,7 @@ mod credentials;
 mod deploys;
 mod files;
 mod git;
+mod log_file;
 mod pty;
 mod store;
 mod tickets;
@@ -99,6 +100,8 @@ pub fn run() {
             git::git_status,
             git::ci_last_run,
             git::gh_pr_create,
+            log_file::log_append,
+            log_file::log_path,
         ])
         .setup(|app| {
             let _window = app.get_webview_window("main").expect("main window missing");

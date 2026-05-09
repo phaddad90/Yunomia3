@@ -150,6 +150,8 @@ body {
 .settings-update-status.status-ok        { color: #166534; }
 .settings-update-status.status-error     { color: #991b1b; }
 .settings-update-status.status-available { color: #92400e; font-weight: 600; }
+.settings-diag-help { margin: 0 0 8px; font-size: 12px; color: var(--text-mid); }
+.settings-log-path { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-mid); word-break: break-all; flex: 1; }
 .composer-input::placeholder { color: var(--text-low); }
 .composer-send {
   height: 36px; min-width: 36px; padding: 0 12px;

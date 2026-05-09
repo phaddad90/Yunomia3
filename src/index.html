@@ -275,6 +275,14 @@
              Linux users see Ctrl-prefixed shortcuts and Mac users see ⌘. -->
         <table class="settings-shortcuts" id="settings-shortcuts-table"></table>
       </section>
+      <section class="settings-section">
+        <h4>Diagnostics</h4>
+        <p class="settings-diag-help">Spawn events, pty exits, and JS errors are appended to a daily log file. Useful when reporting bugs.</p>
+        <div class="settings-row">
+          <span id="settings-log-path" class="settings-log-path">~/.yunomia/log/&lt;today&gt;.log</span>
+          <button id="settings-log-open" type="button" class="btn-secondary">Open log folder</button>
+        </div>
+      </section>
       <div class="modal-actions">
         <button type="button" id="settings-close" class="btn-primary">Close</button>
       </div>

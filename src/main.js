@@ -46,6 +46,23 @@ const PATH_HINT = IS_MAC
   if (spawnCwd) spawnCwd.placeholder = PATH_HINT;
 })();
 
+// Diagnostic log — appends a line to ~/.yunomia/log/<date>.log so spawn
+// failures, pty exits, and JS errors leave a paper trail. Operators paste
+// the file into bug reports. Fails silently if Tauri command unavailable.
+async function appendLog(tag, line) {
+  try { await invoke('log_append', { args: { tag, line: String(line) } }); }
+  catch { /* swallow — log is best-effort */ }
+}
+window.__appendLog = appendLog;
+window.addEventListener('error', (e) => {
+  appendLog('js.error', `${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const reason = e.reason?.stack || e.reason?.message || String(e.reason);
+  appendLog('js.unhandledrejection', reason);
+});
+appendLog('app.boot', `version=${navigator.userAgent}`);
+
 const AGENT_MODELS_DEFAULT = {
   LEAD:'claude-opus-4-7',
   CEO: 'claude-opus-4-7',
@@ -642,8 +659,10 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   });
   const unlistenExit = await listen(`pty://exit/${key}`, (evt) => {
     const code = evt.payload?.code ?? '?';
+    appendLog('agent.exit', `key=${key} code=${code}`);
     term.writeln(`\r\n\x1b[31m[pty exited code=${code}]\x1b[0m`);
     term.writeln(`\x1b[33mIf this happened immediately, the spawn args were rejected by claude. Check that the 'claude' CLI is on PATH and the --permission-mode flag is supported on this version.\x1b[0m`);
+    term.writeln(`\x1b[33mDiagnostic log: Settings → Diagnostics → Open log folder.\x1b[0m`);
     const ent = state.ptys.get(key);
     if (ent) ent.exited = true;
   });
@@ -677,6 +696,7 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   const args = ['--model', model, '--permission-mode', 'acceptEdits'];
   if (opts.resume) args.push('--resume', opts.resume);
   // Spawn the actual claude process with composite key as pty id.
+  appendLog('agent.spawn', `key=${key} code=${code} model=${model} cwd=${cwd} args=[${args.join(' ')}]`);
   try {
     const spawnedAt = Date.now();
     await invoke('pty_spawn', {
@@ -698,11 +718,13 @@ async function spawnAgent(code, model, cwd, opts = {}) {
   } catch (e) {
     // Surface the error inside the xterm pane so it's not a silent black box.
     const msg = String(e?.message || e);
+    appendLog('agent.spawn.fail', `key=${key} code=${code} err=${msg}`);
     term.writeln(`\x1b[31m[spawn failed]\x1b[0m ${msg}`);
     term.writeln(`\x1b[33mHints:\x1b[0m`);
     term.writeln('  • Is the `claude` CLI on your PATH? Try `which claude` in a normal terminal.');
     term.writeln('  • If --permission-mode is unsupported on this claude version, edit src/main.js');
     term.writeln('    and remove that flag.');
+    term.writeln('  • Diagnostic log: ~/.yunomia/log/<today>.log (open from Settings → Diagnostics)');
     return;
   }
   // Persist the sticky model so this agent re-spawns with the same one.
@@ -1499,6 +1521,31 @@ function bindSettings() {
 }
 async function openSettings() {
   const modal = document.getElementById('settings-modal');
+  // Diagnostics — show today's log path + button to open the log directory
+  // in the OS file manager. Clicking opens the folder, not the file, so the
+  // operator can grab today's plus any older logs they want to attach to a
+  // bug report.
+  const logPathEl = document.getElementById('settings-log-path');
+  const logOpenBtn = document.getElementById('settings-log-open');
+  if (logPathEl) {
+    try {
+      const logPath = await invoke('log_path');
+      logPathEl.textContent = logPath;
+      logPathEl.title = logPath;
+    } catch (e) { logPathEl.textContent = '(unavailable)'; }
+  }
+  if (logOpenBtn && !logOpenBtn.dataset.bound) {
+    logOpenBtn.dataset.bound = '1';
+    logOpenBtn.addEventListener('click', async () => {
+      try {
+        const logPath = await invoke('log_path');
+        // open_path opens the parent directory of a file; pass the directory
+        // directly so the operator sees today's + older daily rotations.
+        const dir = logPath.replace(/[\\/][^\\/]+$/, '');
+        await invoke('open_path', { args: { path: dir } });
+      } catch (e) { alert(`Couldn't open log folder: ${e}`); }
+    });
+  }
   // Keyboard shortcuts — render with platform-appropriate modifier so Windows
   // / Linux users see Ctrl-prefixed shortcuts and Mac users see ⌘. Ctrl+Tab
   // is shown literally on every platform because it's the same key on all of
