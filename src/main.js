@@ -1002,6 +1002,7 @@ function renderAgentRail() {
             <button class="ar-cmpct" data-act="compact" title="Run /compact">CMPCT</button>
           </span>
         </div>
+        <span class="ar-dot" data-status="${stat}" title="${escapeHtml(stat)}"></span>
         <button class="ar-action" data-act="open" title="Open tab">↗</button>
         <button class="ar-action ar-kill" data-act="kill" title="Kill">✕</button>
       </li>`;
