@@ -299,7 +299,32 @@ fn spawn_inner(
         }
     }
 
-    let mut child = pair.slave.spawn_command(cmd)?;
+    // Diagnostic log — write the resolved spawn command + args + cwd before
+    // the spawn fires so even immediate-exit failures (Windows error 0xC000013A
+    // etc.) can be diagnosed from the log file. The line is one event so
+    // operators can paste it directly into bug reports.
+    crate::log_file::append(
+        "pty.spawn",
+        &format!(
+            "id={} cmd={} resolved={} args=[{}] cwd={}",
+            args.id,
+            args.command,
+            spawn_command,
+            spawn_args.join(" "),
+            args.cwd.as_deref().unwrap_or("<none>")
+        ),
+    );
+
+    let mut child = match pair.slave.spawn_command(cmd) {
+        Ok(c) => c,
+        Err(e) => {
+            crate::log_file::append(
+                "pty.spawn.fail",
+                &format!("id={} err={}", args.id, e),
+            );
+            return Err(e.into());
+        }
+    };
     drop(pair.slave);
 
     let writer = pair.master.take_writer()?;
@@ -383,12 +408,22 @@ fn spawn_inner(
     thread::spawn(move || {
         let status = child.wait();
         log::info!("pty {} child exited: {:?}", id_for_wait, status);
+        let exit_code = status.as_ref().ok().map(|s| s.exit_code());
+        crate::log_file::append(
+            "pty.exit",
+            &format!(
+                "id={} code={} status={:?}",
+                id_for_wait,
+                exit_code.map(|c| c.to_string()).unwrap_or_else(|| "?".into()),
+                status
+            ),
+        );
         if let Some(handle) = registry_for_wait.lock().get_mut(&id_for_wait) {
             handle.summary.alive = false;
         }
         let _ = app_for_wait.emit(
             &format!("pty://exit/{}", id_for_wait),
-            serde_json::json!({ "id": id_for_wait, "code": status.ok().map(|s| s.exit_code()) }),
+            serde_json::json!({ "id": id_for_wait, "code": exit_code }),
         );
     });
 
