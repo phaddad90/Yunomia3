@@ -68,9 +68,11 @@ function saveProjects() {
   localStorage.setItem(LS_SELECTED, state.selectedProject || '');
 }
 function projectLabel(p) {
-  // Show last path segment as label.
+  // Show last path segment as label. Splits on both `/` and `\` so Windows
+  // paths like `C:\app-marketing` resolve to `app-marketing` instead of
+  // returning the whole path verbatim.
   if (!p) return '?';
-  const parts = p.split('/').filter(Boolean);
+  const parts = p.split(/[\/\\]/).filter(Boolean);
   return parts[parts.length - 1] || p;
 }
 async function renderProjectPicker() {
