@@ -21,7 +21,7 @@ import { renderCredentials } from './lib/credentials.js';
 import { renderDeploys } from './lib/deploys.js';
 import { startGitCiPolling, refreshGit, refreshCi } from './lib/git-ci.js';
 import { writeToAgent, startMcBridge, setAgentPtyResolver } from './lib/mc-bridge.js';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { open as openDialog, ask } from '@tauri-apps/plugin-dialog';
 import { bootCheckForUpdates, installUpdate } from './lib/updater.js';
 import { getVersion } from '@tauri-apps/api/app';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -285,7 +285,7 @@ async function submitSpawn() {
   const temp = $('#spawn-temp')?.checked || false;
   // PH-134 Phase 3 - concurrency limit guard.
   if (state.ptys.size >= state.maxConcurrent) {
-    if (!confirm(`At concurrency limit (${state.maxConcurrent}). Spawn anyway?`)) return;
+    if (!(await ask(`At concurrency limit (${state.maxConcurrent}). Spawn anyway?`, { title: 'Concurrency limit' }))) return;
   }
   closeSpawnModal();
   try {
@@ -1015,9 +1015,9 @@ function renderAgentRail() {
   root.querySelectorAll('.ar-row').forEach((row) => {
     const key = row.dataset.key;
     row.querySelector('[data-act="open"]')?.addEventListener('click', (e) => { e.stopPropagation(); setActivePane(key); });
-    row.querySelector('[data-act="kill"]')?.addEventListener('click', (e) => {
+    row.querySelector('[data-act="kill"]')?.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirm(`Kill ${row.dataset.code}?`)) return;
+      if (!(await ask(`Kill ${row.dataset.code}?`, { title: 'Kill agent' }))) return;
       void killPty(key);
     });
     row.querySelector('[data-act="precompact"]')?.addEventListener('click', (e) => {
@@ -1147,7 +1147,7 @@ function showProposalModal(p) {
     } catch (err) { alert('Approve failed: ' + (err?.message || err)); }
   };
   document.getElementById('proposal-reject').onclick = async () => {
-    if (!confirm(`Reject ${p.code} proposal? Lead will need to write a new one.`)) return;
+    if (!(await ask(`Reject ${p.code} proposal? Lead will need to write a new one.`, { title: 'Reject proposal' }))) return;
     try { await invoke('agent_proposal_clear', { args: { cwd: state.selectedProject } }); } catch {}
     modal.classList.add('hidden');
   };
@@ -1295,7 +1295,7 @@ async function renderProjectView() {
     if (reopenBtn && !reopenBtn.dataset.bound) {
       reopenBtn.dataset.bound = '1';
       reopenBtn.addEventListener('click', async () => {
-        if (!confirm('Re-open onboarding? Kanban will be hidden until you re-approve the brief.')) return;
+        if (!(await ask('Re-open onboarding? Kanban will be hidden until you re-approve the brief.', { title: 'Re-open onboarding' }))) return;
         await reopenOnboarding(state.selectedProject);
         await renderProjectView();
       });
@@ -1316,7 +1316,7 @@ async function renderProjectView() {
           alert(`No tickets or agents could be ingested.${diagText}\n\nLead writes proposed-tickets.json / proposed-agents.json to <cwd>/.yunomia/. If Lead claims it wrote tickets, ask it to re-write to that exact path with shape: [{"title": "...", "body_md": "...", "type": "...", "audience": "...", "assignee_agent": "..."}].`);
           return;
         }
-        if (!confirm(`Found ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s) to ingest.${diagText}\n\nContinue?`)) return;
+        if (!(await ask(`Found ${proposals.tickets.length} ticket(s) + ${proposals.agents.length} agent(s) to ingest.${diagText}\n\nContinue?`, { title: 'Re-ingest proposals' }))) return;
         let createdTickets = 0;
         const ticketErrors = [];
         for (let i = 0; i < proposals.tickets.length; i++) {
@@ -1931,7 +1931,7 @@ async function refreshResumeBanner() {
     b.addEventListener('click', async (e) => {
       e.stopPropagation();
       const sid = b.dataset.sid;
-      if (!confirm(`Delete session ${sid.slice(0,8)}? Conversation history will be lost permanently.`)) return;
+      if (!(await ask(`Delete session ${sid.slice(0,8)}? Conversation history will be lost permanently.`, { title: 'Delete session' }))) return;
       try {
         await invoke('delete_session', { args: { cwd, session_id: sid } });
         b.closest('.resume-pill')?.remove();

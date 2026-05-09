@@ -3,6 +3,7 @@
 // reveal-on-demand.
 
 import { invoke } from '@tauri-apps/api/core';
+import { ask } from '@tauri-apps/plugin-dialog';
 
 const KINDS = ['ssh-key', 'password', 'token', 'env', 'json'];
 
@@ -52,7 +53,7 @@ export async function renderCredentials(container, cwd) {
   }));
   container.querySelectorAll('.cred-delete').forEach((b) => b.addEventListener('click', async () => {
     const name = b.dataset.name;
-    if (!confirm(`Delete credential "${name}"? This removes it from the keychain too.`)) return;
+    if (!(await ask(`Delete credential "${name}"? This removes it from the keychain too.`, { title: 'Delete credential' }))) return;
     try { await invoke('credentials_delete', { args: { cwd, name } }); }
     catch (e) { alert(`Delete failed: ${e}`); return; }
     renderCredentials(container, cwd);

@@ -3,6 +3,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { ask } from '@tauri-apps/plugin-dialog';
 
 const KINDS = ['command', 'ssh', 'rsync', 's3', 'vercel'];
 const APPROVALS = [
@@ -46,7 +47,7 @@ export async function renderDeploys(container, cwd) {
     openModal(container, cwd, t, creds);
   }));
   container.querySelectorAll('.dep-delete').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm('Delete this deploy target?')) return;
+    if (!(await ask('Delete this deploy target?', { title: 'Delete deploy target' }))) return;
     await invoke('deploys_delete', { args: { cwd, id: b.dataset.id } });
     renderDeploys(container, cwd);
   }));

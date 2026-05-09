@@ -5,6 +5,7 @@
 // Driven by `state.selectedProject` from main.js.
 
 import { invoke } from '@tauri-apps/api/core';
+import { ask } from '@tauri-apps/plugin-dialog';
 import { noteTaskBoundary } from './compact-orchestrator.js';
 import { openLessonModal } from './lessons.js';
 
@@ -388,7 +389,7 @@ async function renderSide(t) {
   $('#k-side-pr').addEventListener('click', async () => {
     const title = `${t.human_id || ''} ${t.title || ''}`.trim();
     const body = (t.body_md || '').trim() + (t.human_id ? `\n\n_Yunomia ticket: ${t.human_id}_` : '');
-    if (!confirm(`Create a GitHub PR with title:\n\n${title}\n\nProceed? (Requires gh CLI authenticated for this repo.)`)) return;
+    if (!(await ask(`Create a GitHub PR with title:\n\n${title}\n\nProceed? (Requires gh CLI authenticated for this repo.)`, { title: 'Create GitHub PR' }))) return;
     try {
       const res = await invoke('gh_pr_create', { args: { cwd: k.cwd, title, body, draft: false } });
       await invoke('comments_create', { args: { cwd: k.cwd, ticketId: t.id, bodyMd: `Created PR: ${res.url}`, authorLabel: 'PETER' } });
@@ -401,12 +402,13 @@ async function renderSide(t) {
   // Compliance UI: read eligible_actions and gate the buttons.
   void applyEligibility(t.id);
   $('#k-side-done').addEventListener('click', async () => {
-    if (!confirm(`Mark ${t.human_id} as done?`)) return;
+    if (!(await ask(`Mark ${t.human_id} as done?`, { title: 'Mark done' }))) return;
     const res = await transition(t.id, 'done');
     // Bug-close hook: if this was a bug ticket, prompt to capture a Lesson.
     if (res && res.type === 'bug') {
-      setTimeout(() => {
-        if (confirm(`${res.human_id} closed. Capture a Bug Lesson?`)) {
+      // setTimeout wraps in async IIFE so the awaited ask() works inside.
+      setTimeout(async () => {
+        if (await ask(`${res.human_id} closed. Capture a Bug Lesson?`, { title: 'Capture lesson' })) {
           openLessonModal({ ticket: res });
         }
       }, 200);
