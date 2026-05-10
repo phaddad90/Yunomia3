@@ -812,15 +812,45 @@ fn rich_kickoff(code: &str, role: &str, project_name: &str, brief_excerpt: &str)
          summarise what you did and idle until the next heartbeat. \
          \"Describe state and bail\" is forbidden.\n\n"
     } else {
-        // Workers spawn dormant by design — they wake on assignment, not on
-        // approval. The original passive list is correct here.
-        "## First-wake actions\n\n\
-         1. Read your soul (`.yunomia/agents/{code}/soul.md`), the full brief \
-         (`.yunomia/brief.md`), and any open tickets routed to you in \
-         `.yunomia/tickets.json`.\n\
-         2. If you have an in-progress ticket assigned to you, resume it.\n\
-         3. If your queue is empty, idle until something lands. Don't invent \
-         work.\n\n"
+        // Workers wake on assignment via Yunomia's auto-spawn. By the time
+        // they read this kickoff, tickets.json already has at least one
+        // entry with status=assigned and assignee_agent={code} — that's why
+        // they spawned. The previous template said "if you have an
+        // in-progress ticket assigned to you, resume it" and "if your queue
+        // is empty, idle" — both wrong: assigned-but-not-yet-in-progress
+        // tickets fell through both checks, so workers parsed their queue
+        // as "empty" and idled even though CEO had just routed work to
+        // them. Operator's view: kanban shows tickets routed to SCHEMA /
+        // CALCULATOR, both panes silent. Imperative form fixes that.
+        "## First-wake actions (start your assigned work NOW, do NOT idle)\n\n\
+         You were spawned because Yunomia detected a ticket assigned to \
+         you. Your job starts immediately. Do these in order, without \
+         asking permission:\n\n\
+         1. Read your soul (`.yunomia/agents/{code}/soul.md`) and the full \
+         brief (`.yunomia/brief.md`).\n\
+         2. Read `.yunomia/tickets.json`. Find every ticket where \
+         `assignee_agent` is `{code}` AND `status` is one of `assigned` \
+         or `in_progress`. That is your queue.\n\
+         3. Pick the next ticket — lowest human_id, or by priority where \
+         present, or by upstream-dependency hints in body_md / comments. \
+         If multiple are independent, pick by lowest human_id.\n\
+         4. If the picked ticket is `assigned`, edit `tickets.json` to \
+         transition it to `in_progress` AND append a `comments.json` \
+         entry saying what you're attempting. Do this BEFORE starting \
+         the work — your file edit is the source of truth so the kanban \
+         + CEO see you've started.\n\
+         5. Do the actual work. When the ticket has sub-tasks, finish \
+         the whole ticket in one go before transitioning out of \
+         `in_progress`.\n\
+         6. When finished, edit `tickets.json` to transition \
+         `in_progress` → `verifying` and append a comment summarising \
+         what changed + what to verify. Do NOT idle while you still \
+         have tickets in your queue — return to step 3 for the next.\n\
+         7. ONLY idle when your queue (status=assigned + \
+         status=in_progress + assignee_agent={code}) is genuinely empty. \
+         \"Describe state and bail\" is forbidden — if you have nothing \
+         to do, leave a single comment on your most-recent done ticket \
+         noting that, then sleep.\n\n"
     };
     let first_wake_actions = first_wake_actions.replace("{code}", code);
     format!(
