@@ -90,6 +90,33 @@ onboarding interview. You will:
    - You can rewrite any file before approve; the operator always sees
      fresh counts.
 
+   DO NOT USE THESE TOOLS / PATHS DURING ONBOARDING:
+   - TaskCreate / TaskUpdate (claude code's internal todo system). They are
+     scoped to your one session only - the operator's Yunomia kanban will
+     never see them. Track work as tickets in proposed-tickets.json
+     instead. Every action item, no matter how small, becomes a ticket.
+   - Writing the brief / plan / goals to docs/, README.md, or any path
+     outside .yunomia/. The operator's UI only reads .yunomia/. If you
+     write a beautiful 17 KB plan to docs/PROJECT-PLAN.md it is invisible
+     to Yunomia and the kanban stays empty.
+   - Acting on the work yourself before approval. You are in PROPOSAL
+     mode - your job is to plan, not execute. No \`npm install\`, no
+     migrations, no commits, no code changes. Read files for discovery,
+     yes; mutate them, no. Wait for the operator to click Approve and
+     for individual tickets to be assigned to specific worker agents.
+
+   WRITE INCREMENTALLY, NOT AT THE END:
+   - brief.md: write a stub after the operator's FIRST substantive answer.
+     Update after every new constraint, scope decision, or stakeholder
+     mention. Even a 200-byte brief beats no brief if the session
+     compacts mid-interview.
+   - proposed-agents.json: write the moment a role-shaped responsibility
+     surfaces in the conversation ("we'll need someone for the API,
+     someone for the UI"). Refine as scope clarifies.
+   - proposed-tickets.json: append every concrete action item the moment
+     it's named. By approval time the file already has 10-30 entries the
+     operator has implicitly seen and agreed to.
+
    MANDATORY VERIFICATION - after writing each file, run:
      Bash:  ls -la ${cwd}/.yunomia/ && wc -l ${cwd}/.yunomia/proposed-*.json
    and quote the output back to the user. Do NOT report "I wrote N tickets"
@@ -177,13 +204,14 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
           <ol class="onb-steps">
             <li><b>Spawn lead.</b> A Claude Code session opens in the LEAD tab.</li>
             <li><b>Interview.</b> Lead asks you about goals, scope, constraints, deploy targets.</li>
-            <li><b>Brief written.</b> Lead writes <code>brief.md</code> incrementally as you talk.</li>
-            <li><b>Proposals.</b> Lead suggests agent fleet + initial tickets in the brief.</li>
-            <li><b>Approve.</b> You click "Approve brief" - Yunomia switches to active mode and the kanban becomes available.</li>
+            <li><b>Brief + proposals on disk.</b> Lead writes <code>.yunomia/brief.md</code>, <code>.yunomia/proposed-agents.json</code>, and <code>.yunomia/proposed-tickets.json</code> incrementally. <em>Watch for these files via the file tree — if Lead is 10+ exchanges in and you don't see them, prompt it: "write the brief and proposals to .yunomia/ now."</em></li>
+            <li><b>Approve.</b> Click <b>Approve brief - go active</b> below (NOT in chat — the button only enables once <code>brief.md</code> has &gt;50 chars). Yunomia ingests the proposals, switches to active mode, kanban populates.</li>
+            <li><b>Workers run.</b> Spawn the worker agents Lead proposed; tickets in <code>triage</code> get routed to them.</li>
           </ol>
           <div class="onb-approve-row">
             <button id="onb-approve" class="btn-primary" type="button" ${briefHasContent ? '' : 'disabled'}>Approve brief - go active</button>
-            ${briefHasContent ? '' : '<small>Available once the brief has real content (>50 chars).</small>'}
+            <button id="onb-refresh-onboarding" class="btn-ghost" type="button" title="Re-read brief.md to refresh the Approve button state">↻</button>
+            ${briefHasContent ? '' : '<small>Available once <code>.yunomia/brief.md</code> has real content (&gt;50 chars). If Lead has written it but the button is still disabled, click ↻ to re-check.</small>'}
           </div>
         </aside>
       </div>
@@ -211,6 +239,18 @@ export function renderOnboardingView({ container, cwd, state, brief, spawnAgent,
   const refreshBtn = container.querySelector('#onb-refresh-brief');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', async () => {
+      const fresh = await loadOnboardingForProject(cwd);
+      renderOnboardingView({ container, cwd, state: fresh.state, brief: fresh.brief, spawnAgent, onApproved, leadRunning });
+    });
+  }
+  // Manual re-check: rerender the onboarding view by re-reading brief.md.
+  // Useful when Lead writes brief.md mid-conversation but the panel was
+  // rendered before the file existed and the Approve button is stuck in
+  // the disabled state. Without this the only way to refresh is Ctrl+R or
+  // a project switch — which loses the running LEAD pty's tab.
+  const onboardingRefreshBtn = container.querySelector('#onb-refresh-onboarding');
+  if (onboardingRefreshBtn) {
+    onboardingRefreshBtn.addEventListener('click', async () => {
       const fresh = await loadOnboardingForProject(cwd);
       renderOnboardingView({ container, cwd, state: fresh.state, brief: fresh.brief, spawnAgent, onApproved, leadRunning });
     });
