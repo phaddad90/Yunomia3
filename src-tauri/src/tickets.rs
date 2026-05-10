@@ -780,6 +780,79 @@ fn rich_kickoff(code: &str, role: &str, project_name: &str, brief_excerpt: &str)
     } else {
         "## Authority over your own tickets\n\nYou have full read+write access to `.yunomia/tickets.json`. When you start work on a ticket assigned to you, transition it `assigned` → `in_progress` via Edit. When done, transition `in_progress` → `verifying` and hand off to QA. Don't wait for permission — your file edit IS the transition.\n"
     };
+    let first_wake_actions = if is_orchestrator {
+        // Orchestrators (CEO/LEAD) never idle on first wake — by the time
+        // they spawn the operator has approved a brief and there are tickets
+        // in triage waiting to be routed. The previous template said "if your
+        // queue is empty, idle" which sent CEO to sleep at the user's
+        // approval moment instead of getting on with the work. The result
+        // was a brand-new pane sitting silent, the operator typing into it
+        // not sure what to do — bad first impression of the orchestrator
+        // model. Imperative form: read state, ROUTE NOW, only then sleep.
+        "## First-wake actions (orchestrator — start NOW, do NOT idle)\n\n\
+         The operator just approved the brief. Tickets exist in triage. Your \
+         job starts immediately. Do these in order, without asking permission:\n\n\
+         1. Read your soul (`.yunomia/agents/{code}/soul.md`), the full brief \
+         (`.yunomia/brief.md`), `.yunomia/agents.json` (the roster), and \
+         `.yunomia/tickets.json` (the work).\n\
+         2. Identify the FIRST WAVE — tickets in status `triage` with no \
+         upstream dependency on another ticket. Schema/migration tickets \
+         usually go first; standalone setup tickets in parallel.\n\
+         3. ROUTE the first wave by editing `.yunomia/tickets.json`: change \
+         each first-wave ticket's `status` from `triage` to `assigned`. The \
+         `assignee_agent` field is already set; you don't need to change \
+         that. Yunomia's poller detects the file change and auto-spawns \
+         each assigned worker.\n\
+         4. Append a one-line `body_md` note to each routed ticket stating \
+         why it was routed first (e.g. \"prerequisite for calculator \
+         build\") so the worker knows context.\n\
+         5. Goals (if any in `.yunomia/goals.json`): advance one or file a \
+         question if blocked. Don't just describe state.\n\
+         6. ONLY after the first wave is routed AND any goals are touched, \
+         summarise what you did and idle until the next heartbeat. \
+         \"Describe state and bail\" is forbidden.\n\n"
+    } else {
+        // Workers wake on assignment via Yunomia's auto-spawn. By the time
+        // they read this kickoff, tickets.json already has at least one
+        // entry with status=assigned and assignee_agent={code} — that's why
+        // they spawned. The previous template said "if you have an
+        // in-progress ticket assigned to you, resume it" and "if your queue
+        // is empty, idle" — both wrong: assigned-but-not-yet-in-progress
+        // tickets fell through both checks, so workers parsed their queue
+        // as "empty" and idled even though CEO had just routed work to
+        // them. Operator's view: kanban shows tickets routed to SCHEMA /
+        // CALCULATOR, both panes silent. Imperative form fixes that.
+        "## First-wake actions (start your assigned work NOW, do NOT idle)\n\n\
+         You were spawned because Yunomia detected a ticket assigned to \
+         you. Your job starts immediately. Do these in order, without \
+         asking permission:\n\n\
+         1. Read your soul (`.yunomia/agents/{code}/soul.md`) and the full \
+         brief (`.yunomia/brief.md`).\n\
+         2. Read `.yunomia/tickets.json`. Find every ticket where \
+         `assignee_agent` is `{code}` AND `status` is one of `assigned` \
+         or `in_progress`. That is your queue.\n\
+         3. Pick the next ticket — lowest human_id, or by priority where \
+         present, or by upstream-dependency hints in body_md / comments. \
+         If multiple are independent, pick by lowest human_id.\n\
+         4. If the picked ticket is `assigned`, edit `tickets.json` to \
+         transition it to `in_progress` AND append a `comments.json` \
+         entry saying what you're attempting. Do this BEFORE starting \
+         the work — your file edit is the source of truth so the kanban \
+         + CEO see you've started.\n\
+         5. Do the actual work. When the ticket has sub-tasks, finish \
+         the whole ticket in one go before transitioning out of \
+         `in_progress`.\n\
+         6. When finished, edit `tickets.json` to transition \
+         `in_progress` → `verifying` and append a comment summarising \
+         what changed + what to verify. Do NOT idle while you still \
+         have tickets in your queue — return to step 3 for the next.\n\
+         7. ONLY idle when your queue (status=assigned + \
+         status=in_progress + assignee_agent={code}) is genuinely empty. \
+         \"Describe state and bail\" is forbidden — if you have nothing \
+         to do, leave a single comment on your most-recent done ticket \
+         noting that, then sleep.\n\n"
+    };
+    let first_wake_actions = first_wake_actions.replace("{code}", code);
     format!(
 "You are {code}, an agent on the **{project_name}** project.
 
@@ -791,13 +864,7 @@ Your role (from Lead's proposal): {role}
 
 The full brief lives at `.yunomia/brief.md` in the project root.
 
-## First-wake actions
-
-1. Read your soul (`.yunomia/agents/{code}/soul.md`), the full brief (`.yunomia/brief.md`), and any open tickets routed to you in `.yunomia/tickets.json`.
-2. If you have an in-progress ticket assigned to you, resume it.
-3. If your queue is empty, idle until something lands. Don't invent work.
-
-{authority_block}
+{first_wake_actions}{authority_block}
 ## How orchestration actually works in Yunomia (CEO/LEAD only — skip if you're a worker)
 
 Yunomia gives you THREE files for driving the project, not just `tickets.json`:
