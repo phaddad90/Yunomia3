@@ -780,6 +780,49 @@ fn rich_kickoff(code: &str, role: &str, project_name: &str, brief_excerpt: &str)
     } else {
         "## Authority over your own tickets\n\nYou have full read+write access to `.yunomia/tickets.json`. When you start work on a ticket assigned to you, transition it `assigned` → `in_progress` via Edit. When done, transition `in_progress` → `verifying` and hand off to QA. Don't wait for permission — your file edit IS the transition.\n"
     };
+    let first_wake_actions = if is_orchestrator {
+        // Orchestrators (CEO/LEAD) never idle on first wake — by the time
+        // they spawn the operator has approved a brief and there are tickets
+        // in triage waiting to be routed. The previous template said "if your
+        // queue is empty, idle" which sent CEO to sleep at the user's
+        // approval moment instead of getting on with the work. The result
+        // was a brand-new pane sitting silent, the operator typing into it
+        // not sure what to do — bad first impression of the orchestrator
+        // model. Imperative form: read state, ROUTE NOW, only then sleep.
+        "## First-wake actions (orchestrator — start NOW, do NOT idle)\n\n\
+         The operator just approved the brief. Tickets exist in triage. Your \
+         job starts immediately. Do these in order, without asking permission:\n\n\
+         1. Read your soul (`.yunomia/agents/{code}/soul.md`), the full brief \
+         (`.yunomia/brief.md`), `.yunomia/agents.json` (the roster), and \
+         `.yunomia/tickets.json` (the work).\n\
+         2. Identify the FIRST WAVE — tickets in status `triage` with no \
+         upstream dependency on another ticket. Schema/migration tickets \
+         usually go first; standalone setup tickets in parallel.\n\
+         3. ROUTE the first wave by editing `.yunomia/tickets.json`: change \
+         each first-wave ticket's `status` from `triage` to `assigned`. The \
+         `assignee_agent` field is already set; you don't need to change \
+         that. Yunomia's poller detects the file change and auto-spawns \
+         each assigned worker.\n\
+         4. Append a one-line `body_md` note to each routed ticket stating \
+         why it was routed first (e.g. \"prerequisite for calculator \
+         build\") so the worker knows context.\n\
+         5. Goals (if any in `.yunomia/goals.json`): advance one or file a \
+         question if blocked. Don't just describe state.\n\
+         6. ONLY after the first wave is routed AND any goals are touched, \
+         summarise what you did and idle until the next heartbeat. \
+         \"Describe state and bail\" is forbidden.\n\n"
+    } else {
+        // Workers spawn dormant by design — they wake on assignment, not on
+        // approval. The original passive list is correct here.
+        "## First-wake actions\n\n\
+         1. Read your soul (`.yunomia/agents/{code}/soul.md`), the full brief \
+         (`.yunomia/brief.md`), and any open tickets routed to you in \
+         `.yunomia/tickets.json`.\n\
+         2. If you have an in-progress ticket assigned to you, resume it.\n\
+         3. If your queue is empty, idle until something lands. Don't invent \
+         work.\n\n"
+    };
+    let first_wake_actions = first_wake_actions.replace("{code}", code);
     format!(
 "You are {code}, an agent on the **{project_name}** project.
 
@@ -791,13 +834,7 @@ Your role (from Lead's proposal): {role}
 
 The full brief lives at `.yunomia/brief.md` in the project root.
 
-## First-wake actions
-
-1. Read your soul (`.yunomia/agents/{code}/soul.md`), the full brief (`.yunomia/brief.md`), and any open tickets routed to you in `.yunomia/tickets.json`.
-2. If you have an in-progress ticket assigned to you, resume it.
-3. If your queue is empty, idle until something lands. Don't invent work.
-
-{authority_block}
+{first_wake_actions}{authority_block}
 ## How orchestration actually works in Yunomia (CEO/LEAD only — skip if you're a worker)
 
 Yunomia gives you THREE files for driving the project, not just `tickets.json`:
